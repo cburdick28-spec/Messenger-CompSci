@@ -42,8 +42,8 @@
         <input id="passwordInput" type="password" placeholder="Password (min 6 chars)" />
         <div style="height:10px"></div>
         <div style="display:flex; gap:8px;">
-          <button id="registerBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) { window.__messengerAuth('register'); } else { document.getElementById('error').textContent='App failed to initialize. Reload with ?v=5'; }">Register</button>
-          <button id="loginBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) { window.__messengerAuth('login'); } else { document.getElementById('error').textContent='App failed to initialize. Reload with ?v=5'; }">Login</button>
+          <button id="registerBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) { window.__messengerAuth('register'); } else { document.getElementById('error').textContent=(window.__messengerInitError || 'App failed to initialize. Reload with ?v=8'); }">Register</button>
+          <button id="loginBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) { window.__messengerAuth('login'); } else { document.getElementById('error').textContent=(window.__messengerInitError || 'App failed to initialize. Reload with ?v=8'); }">Login</button>
         </div>
         <div style="height:8px"></div>
         <button id="installBtn" class="hidden" style="width:100%;">Install App</button>
@@ -85,6 +85,17 @@
       </div>
     </div>
 
+    <script>
+      window.__messengerInitError = "";
+      window.addEventListener("error", function (event) {
+        var msg = event && event.message ? event.message : "Unknown script error";
+        window.__messengerInitError = "Init error: " + msg;
+        var errEl = document.getElementById("error");
+        if (errEl && !window.__messengerAuth) {
+          errEl.textContent = window.__messengerInitError;
+        }
+      });
+    </script>
     <script src="/static/supabase-js.js"></script>
     <script src="/static/config.js"></script>
     <script>
