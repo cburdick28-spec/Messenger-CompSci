@@ -42,8 +42,8 @@
         <input id="passwordInput" type="password" placeholder="Password (min 6 chars)" />
         <div style="height:10px"></div>
         <div style="display:flex; gap:8px;">
-          <button id="registerBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) window.__messengerAuth('register');">Register</button>
-          <button id="loginBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) window.__messengerAuth('login');">Login</button>
+          <button id="registerBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) { window.__messengerAuth('register'); } else { document.getElementById('error').textContent='App failed to initialize. Reload with ?v=5'; }">Register</button>
+          <button id="loginBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) { window.__messengerAuth('login'); } else { document.getElementById('error').textContent='App failed to initialize. Reload with ?v=5'; }">Login</button>
         </div>
         <div style="height:8px"></div>
         <button id="installBtn" class="hidden" style="width:100%;">Install App</button>
@@ -103,6 +103,10 @@
       const messages = el("messages");
       const chatTitle = el("chatTitle");
       const error = el("error");
+
+      window.addEventListener("error", (event) => {
+        setError(`Script error: ${event.message}`);
+      });
 
       function dmPair(idA, idB) { return [idA, idB].sort(); }
       function dmId(a, b) { return `dm:${[a, b].sort().join(":")}`; }
