@@ -42,8 +42,8 @@
         <input id="passwordInput" type="password" placeholder="Password (min 6 chars)" />
         <div style="height:10px"></div>
         <div style="display:flex; gap:8px;">
-          <button id="registerBtn">Register</button>
-          <button id="loginBtn">Login</button>
+          <button id="registerBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) window.__messengerAuth('register');">Register</button>
+          <button id="loginBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) window.__messengerAuth('login');">Login</button>
         </div>
         <div style="height:8px"></div>
         <button id="installBtn" class="hidden" style="width:100%;">Install App</button>
@@ -319,6 +319,8 @@
           setError(authError?.message || "Authentication failed.");
         }
       }
+
+      window.__messengerAuth = auth;
 
       window.openDm = async (encodedUserId, encodedEmail) => {
         const userId = decodeURIComponent(encodedUserId);
