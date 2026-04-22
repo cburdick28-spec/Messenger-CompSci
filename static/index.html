@@ -21,6 +21,7 @@
       input, button { border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; padding: 10px; }
       input { width: 100%; }
       button { cursor: pointer; background: #2563eb; border-color: #2563eb; }
+      select { border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; padding: 10px; width: 100%; }
       .item { padding: 8px; border: 1px solid #334155; border-radius: 8px; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
       .actions { display: flex; gap: 6px; }
       .actions button { padding: 6px 8px; }
@@ -30,6 +31,9 @@
       .me { color: #86efac; }
       #error { color: #fca5a5; min-height: 20px; }
       .hidden { display: none; }
+      .quick-chat { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+      .emoji-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+      .emoji-btn { padding: 6px 10px; font-size: 18px; line-height: 1; background: #1d4ed8; border-color: #1d4ed8; }
     </style>
   </head>
   <body>
@@ -78,7 +82,10 @@
           <div class="chat-head" id="chatTitle">Select a contact or group</div>
           <div class="messages" id="messages"></div>
           <div class="row">
-            <input id="messageInput" placeholder="Type a message..." />
+            <div class="quick-chat">
+              <div id="emojiBar" class="emoji-bar"></div>
+              <select id="quickMessageSelect"></select>
+            </div>
             <button id="sendBtn">Send</button>
           </div>
         </section>
@@ -114,6 +121,20 @@
       const messages = el("messages");
       const chatTitle = el("chatTitle");
       const error = el("error");
+      const QUICK_MESSAGES = [
+        "Hi!",
+        "How are you?",
+        "Nice shot!",
+        "Great pass!",
+        "Thanks!",
+        "No problem.",
+        "Good game!",
+        "Oops!",
+        "Wow!",
+        "Bye!"
+      ];
+      const QUICK_EMOJIS = ["😀", "😂", "😎", "🔥", "👍", "👀", "🎉", "❤️", "🙌", "😅"];
+      const ALLOWED_MESSAGES = new Set([...QUICK_MESSAGES, ...QUICK_EMOJIS]);
 
       window.addEventListener("error", (event) => {
         setError(`Script error: ${event.message}`);
@@ -131,6 +152,13 @@
       function setLoggedIn(loggedIn) {
         el("login").style.display = loggedIn ? "none" : "grid";
         el("wrap").style.display = loggedIn ? "block" : "none";
+      }
+
+      function initQuickChatOptions() {
+        const select = el("quickMessageSelect");
+        const emojiBar = el("emojiBar");
+        select.innerHTML = `<option value="">Choose a quick message...</option>${QUICK_MESSAGES.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("")}`;
+        emojiBar.innerHTML = QUICK_EMOJIS.map((emoji) => `<button class="emoji-btn" type="button" onclick="sendQuickMessage('${emoji}')">${emoji}</button>`).join("");
       }
 
       async function ensureProfile(user) {
@@ -397,20 +425,26 @@
         await loadGroups();
       };
 
-      el("sendBtn").onclick = async () => {
-        const text = el("messageInput").value.trim();
-        if (!text || !current) return;
+      window.sendQuickMessage = async (text) => {
+        if (!current) return setError("Select a contact or group first.");
+        const cleanText = String(text || "").trim();
+        if (!ALLOWED_MESSAGES.has(cleanText)) return setError("Only emoji and preset quick messages are allowed.");
         let payload;
         if (current.kind === "dm") {
           const [a, b] = dmPair(me.id, current.userId);
-          payload = { kind: "dm", dm_a: a, dm_b: b, sender_id: me.id, text };
+          payload = { kind: "dm", dm_a: a, dm_b: b, sender_id: me.id, text: cleanText };
         } else {
-          payload = { kind: "group", group_id: current.group.id, sender_id: me.id, text };
+          payload = { kind: "group", group_id: current.group.id, sender_id: me.id, text: cleanText };
         }
         const { error: insertError } = await sbClient.from("messages").insert(payload);
         if (insertError) return setError(insertError.message);
-        el("messageInput").value = "";
         await refreshCurrentHistory();
+      };
+
+      el("sendBtn").onclick = async () => {
+        const selected = el("quickMessageSelect").value;
+        if (!selected) return setError("Choose a quick message first.");
+        await window.sendQuickMessage(selected);
       };
 
       el("logoutBtn").onclick = async () => {
@@ -427,7 +461,7 @@
         setLoggedIn(false);
       };
 
-      el("messageInput").addEventListener("keydown", (e) => { if (e.key === "Enter") el("sendBtn").click(); });
+      el("quickMessageSelect").addEventListener("keydown", (e) => { if (e.key === "Enter") el("sendBtn").click(); });
       el("passwordInput").addEventListener("keydown", (e) => { if (e.key === "Enter") auth("login"); });
 
       if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/service-worker.js?v=2");
@@ -451,6 +485,7 @@
           setError("Missing Supabase config. Edit /static/config.js with your project URL and anon key.");
           return;
         }
+        initQuickChatOptions();
         sbClient = window.supabase.createClient(
           window.MESSENGER_CONFIG.supabaseUrl,
           window.MESSENGER_CONFIG.supabaseAnonKey
