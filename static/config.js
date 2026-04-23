@@ -1,4 +1,4 @@
 window.MESSENGER_CONFIG = {
-  supabaseUrl: "https://supabase.com/dashboard/project/hnjziardboghvhyhyhcx",
+  supabaseUrl: ""https://hnjziardboghvhyhyhcx.supabase.co",
   supabaseAnonKey: "vck_1GNkPgzCiWASTHH9igGBhTzSbJLutkA6XUUQTOKquLEws72uvp4K9eLn"
 };
