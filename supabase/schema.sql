@@ -72,7 +72,12 @@ returns boolean
 language sql
 stable
 as $$
-  select lower(coalesce(auth.jwt() ->> 'email', '')) = 'cburdick28@brewstermadrid.com';
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and lower(p.email) = 'cburdick28@brewstermadrid.com'
+  );
 $$;
 
 create or replace function public.app_is_restricted(p_user_id uuid)
