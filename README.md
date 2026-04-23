@@ -14,6 +14,13 @@ Messenger Chat is now configured for **Vercel + Supabase**.
    - Project URL
    - Anon public key
 
+### Admin moderation setup
+
+Admin access is hard-locked in `supabase/schema.sql` to:
+- `cburdick28@brewstermadrid.com`
+
+Only that email can use the admin panel and send custom typed messages. All other users are limited to preset quick messages/emojis.
+
 ## 2. Add Supabase keys in this repo
 
 Edit `static/config.js`:

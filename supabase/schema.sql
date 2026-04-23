@@ -45,11 +45,90 @@ create table if not exists public.messages (
   )
 );
 
+create table if not exists public.admin_users (
+  email text primary key,
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null
+);
+
+create table if not exists public.user_moderation (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  is_banned boolean not null default false,
+  timeout_until timestamptz,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id) on delete set null
+);
+
+create or replace function public.app_has_admin()
+returns boolean
+language sql
+stable
+as $$
+  select true;
+$$;
+
+create or replace function public.app_is_admin()
+returns boolean
+language sql
+stable
+as $$
+  select lower(coalesce(auth.jwt() ->> 'email', '')) = 'cburdick28@brewstermadrid.com';
+$$;
+
+create or replace function public.app_is_restricted(p_user_id uuid)
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1
+    from public.user_moderation um
+    where um.user_id = p_user_id
+      and (
+        um.is_banned
+        or (um.timeout_until is not null and um.timeout_until > now())
+      )
+  );
+$$;
+
+create or replace function public.app_is_quick_message(p_text text)
+returns boolean
+language sql
+immutable
+as $$
+  select p_text = any (
+    array[
+      'Hey, what''s up?',
+      'On my way.',
+      'Running a few minutes late.',
+      'Can we talk later?',
+      'I''m here.',
+      'Sounds good to me.',
+      'Thanks, I appreciate it.',
+      'No worries.',
+      'Let me check and get back to you.',
+      'Talk soon.',
+      '😀',
+      '😂',
+      '😎',
+      '🔥',
+      '👍',
+      '👀',
+      '🎉',
+      '❤️',
+      '🙌',
+      '😅'
+    ]::text[]
+  );
+$$;
+
 alter table public.profiles enable row level security;
 alter table public.contacts enable row level security;
 alter table public.chat_groups enable row level security;
 alter table public.group_members enable row level security;
 alter table public.messages enable row level security;
+alter table public.admin_users enable row level security;
+alter table public.user_moderation enable row level security;
 
 drop policy if exists profiles_select_all on public.profiles;
 create policy profiles_select_all on public.profiles
@@ -90,6 +169,8 @@ create policy group_members_insert_self on public.group_members
 drop policy if exists messages_select_visible on public.messages;
 create policy messages_select_visible on public.messages
   for select to authenticated using (
+    public.app_is_admin()
+    or
     (kind = 'dm' and auth.uid() in (dm_a, dm_b))
     or
     (kind = 'group' and exists (
@@ -104,6 +185,11 @@ create policy messages_insert_dm on public.messages
     kind = 'dm'
     and sender_id = auth.uid()
     and auth.uid() in (dm_a, dm_b)
+    and not public.app_is_restricted(auth.uid())
+    and (
+      public.app_is_admin()
+      or public.app_is_quick_message(text)
+    )
   );
 
 drop policy if exists messages_insert_group on public.messages;
@@ -111,8 +197,63 @@ create policy messages_insert_group on public.messages
   for insert to authenticated with check (
     kind = 'group'
     and sender_id = auth.uid()
+    and not public.app_is_restricted(auth.uid())
+    and (
+      public.app_is_admin()
+      or public.app_is_quick_message(text)
+    )
     and exists (
       select 1 from public.group_members gm
       where gm.group_id = messages.group_id and gm.user_id = auth.uid()
     )
   );
+
+drop policy if exists admin_users_select_admin on public.admin_users;
+create policy admin_users_select_admin on public.admin_users
+  for select to authenticated using (public.app_is_admin());
+
+drop policy if exists admin_users_insert_bootstrap_or_admin on public.admin_users;
+create policy admin_users_insert_bootstrap_or_admin on public.admin_users
+  for insert to authenticated with check (
+    (
+      not public.app_has_admin()
+      and lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+      and created_by = auth.uid()
+    )
+    or
+    (
+      public.app_is_admin()
+      and created_by = auth.uid()
+    )
+  );
+
+drop policy if exists admin_users_delete_admin on public.admin_users;
+create policy admin_users_delete_admin on public.admin_users
+  for delete to authenticated using (public.app_is_admin());
+
+drop policy if exists user_moderation_select_admin_or_self on public.user_moderation;
+create policy user_moderation_select_admin_or_self on public.user_moderation
+  for select to authenticated using (
+    public.app_is_admin() or user_id = auth.uid()
+  );
+
+drop policy if exists user_moderation_insert_admin on public.user_moderation;
+create policy user_moderation_insert_admin on public.user_moderation
+  for insert to authenticated with check (
+    public.app_is_admin()
+    and updated_by = auth.uid()
+    and user_id <> auth.uid()
+  );
+
+drop policy if exists user_moderation_update_admin on public.user_moderation;
+create policy user_moderation_update_admin on public.user_moderation
+  for update to authenticated using (public.app_is_admin())
+  with check (
+    public.app_is_admin()
+    and updated_by = auth.uid()
+    and user_id <> auth.uid()
+  );
+
+drop policy if exists user_moderation_delete_admin on public.user_moderation;
+create policy user_moderation_delete_admin on public.user_moderation
+  for delete to authenticated using (public.app_is_admin());

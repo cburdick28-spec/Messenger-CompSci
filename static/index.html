@@ -34,6 +34,12 @@
       .quick-chat { display: flex; flex-direction: column; gap: 8px; width: 100%; }
       .emoji-bar { display: flex; gap: 6px; flex-wrap: wrap; }
       .emoji-btn { padding: 6px 10px; font-size: 18px; line-height: 1; background: #1d4ed8; border-color: #1d4ed8; }
+      .admin-panel { border: 1px solid #334155; border-radius: 8px; padding: 10px; margin-top: 8px; }
+      .admin-log { max-height: 180px; overflow-y: auto; border: 1px solid #334155; border-radius: 8px; padding: 8px; background: #0b1220; }
+      .admin-log-item { margin-bottom: 8px; border-bottom: 1px solid #1f2937; padding-bottom: 6px; }
+      .admin-log-item:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+      .admin-inline { display: flex; gap: 6px; margin-bottom: 8px; }
+      .admin-inline input { max-width: 140px; }
     </style>
   </head>
   <body>
@@ -76,6 +82,26 @@
             <button id="createGroupBtn">Create</button>
           </div>
           <div id="groupsList"></div>
+
+          <h3 id="adminHeading" class="hidden">Admin Panel</h3>
+          <button id="claimAdminBtn" class="hidden" style="width:100%; margin-bottom:8px;">Claim Admin Access</button>
+          <div id="adminPanel" class="admin-panel hidden">
+            <div class="admin-inline">
+              <select id="adminUserSelect"></select>
+            </div>
+            <div class="admin-inline">
+              <input id="timeoutMinutesInput" type="number" min="1" value="10" />
+              <button id="timeoutBtn">Timeout</button>
+            </div>
+            <div class="admin-inline">
+              <button id="banBtn">Ban</button>
+              <button id="unbanBtn">Clear</button>
+            </div>
+            <div id="adminModerationStatus" class="muted"></div>
+            <div style="height:8px"></div>
+            <div class="muted">Recent messages</div>
+            <div id="adminMessageLog" class="admin-log"></div>
+          </div>
         </aside>
 
         <section class="chat">
@@ -85,8 +111,10 @@
             <div class="quick-chat">
               <div id="emojiBar" class="emoji-bar"></div>
               <select id="quickMessageSelect"></select>
+              <input id="customMessageInput" class="hidden" placeholder="Admin: type any message..." />
             </div>
             <button id="sendBtn">Send</button>
+            <button id="sendCustomBtn" class="hidden">Send Typed</button>
           </div>
         </section>
       </div>
@@ -113,6 +141,11 @@
       let current = null;
       let installPrompt = null;
       let refreshTimer = null;
+      let isAdmin = false;
+      let hasAdmin = false;
+      let myModeration = null;
+      let allProfiles = [];
+      let moderationMap = new Map();
       const byConversation = new Map();
 
       const el = (id) => document.getElementById(id);
@@ -121,6 +154,18 @@
       const messages = el("messages");
       const chatTitle = el("chatTitle");
       const error = el("error");
+      const adminHeading = el("adminHeading");
+      const claimAdminBtn = el("claimAdminBtn");
+      const adminPanel = el("adminPanel");
+      const adminUserSelect = el("adminUserSelect");
+      const timeoutMinutesInput = el("timeoutMinutesInput");
+      const timeoutBtn = el("timeoutBtn");
+      const banBtn = el("banBtn");
+      const unbanBtn = el("unbanBtn");
+      const adminModerationStatus = el("adminModerationStatus");
+      const adminMessageLog = el("adminMessageLog");
+      const customMessageInput = el("customMessageInput");
+      const sendCustomBtn = el("sendCustomBtn");
       const QUICK_MESSAGES = [
         "Hey, what's up?",
         "On my way.",
@@ -152,6 +197,202 @@
       function setLoggedIn(loggedIn) {
         el("login").style.display = loggedIn ? "none" : "grid";
         el("wrap").style.display = loggedIn ? "block" : "none";
+      }
+
+      function toBool(value) {
+        if (value === true || value === false) return value;
+        if (typeof value === "string") return value.toLowerCase() === "true";
+        if (value && typeof value === "object" && "app_is_admin" in value) return Boolean(value.app_is_admin);
+        if (value && typeof value === "object" && "app_has_admin" in value) return Boolean(value.app_has_admin);
+        return Boolean(value);
+      }
+
+      function isMissingSchemaError(err) {
+        const text = String((err && err.message) || "").toLowerCase();
+        return text.includes("does not exist") || text.includes("could not find");
+      }
+
+      function restrictionMessage() {
+        if (!myModeration) return "";
+        if (myModeration.is_banned) return "Your account is banned from sending messages.";
+        if (myModeration.timeout_until) {
+          const until = new Date(myModeration.timeout_until);
+          if (!Number.isNaN(until.getTime()) && until.getTime() > Date.now()) {
+            return `You are timed out until ${until.toLocaleString()}.`;
+          }
+        }
+        return "";
+      }
+
+      function renderAdminUserOptions() {
+        if (!isAdmin) return;
+        const options = allProfiles
+          .filter((p) => p.id !== me.id)
+          .map((p) => {
+            const mod = moderationMap.get(p.id);
+            let badge = "";
+            if (mod && mod.is_banned) badge = " [BANNED]";
+            else if (mod && mod.timeout_until && new Date(mod.timeout_until).getTime() > Date.now()) badge = " [TIMED OUT]";
+            return `<option value="${encodeURIComponent(p.id)}">${esc(p.email)}${esc(badge)}</option>`;
+          });
+        adminUserSelect.innerHTML = options.join("") || `<option value="">No other users</option>`;
+      }
+
+      function renderAdminControls() {
+        const showClaim = !hasAdmin;
+        claimAdminBtn.classList.toggle("hidden", !showClaim || !me);
+        const showPanel = isAdmin;
+        adminHeading.classList.toggle("hidden", !showPanel);
+        adminPanel.classList.toggle("hidden", !showPanel);
+        customMessageInput.classList.toggle("hidden", !showPanel);
+        sendCustomBtn.classList.toggle("hidden", !showPanel);
+      }
+
+      async function fetchAdminState() {
+        try {
+          const { data: hasData, error: hasError } = await sbClient.rpc("app_has_admin");
+          if (hasError) throw hasError;
+          const { data: adminData, error: adminError } = await sbClient.rpc("app_is_admin");
+          if (adminError) throw adminError;
+          hasAdmin = toBool(hasData);
+          isAdmin = toBool(adminData);
+        } catch (adminError) {
+          hasAdmin = true;
+          isAdmin = false;
+          if (!isMissingSchemaError(adminError)) throw adminError;
+        }
+        renderAdminControls();
+      }
+
+      async function loadMyModeration() {
+        try {
+          const { data, error: moderationError } = await sbClient
+            .from("user_moderation")
+            .select("is_banned,timeout_until")
+            .eq("user_id", me.id)
+            .maybeSingle();
+          if (moderationError) throw moderationError;
+          myModeration = data || null;
+        } catch (moderationError) {
+          myModeration = null;
+          if (!isMissingSchemaError(moderationError)) throw moderationError;
+        }
+      }
+
+      async function loadAdminProfiles() {
+        if (!isAdmin) return;
+        const { data, error: profilesError } = await sbClient
+          .from("profiles")
+          .select("id,email")
+          .order("email", { ascending: true });
+        if (profilesError) throw profilesError;
+        allProfiles = data || [];
+        renderAdminUserOptions();
+      }
+
+      async function loadModerationMap() {
+        if (!isAdmin) return;
+        const { data, error: moderationError } = await sbClient
+          .from("user_moderation")
+          .select("user_id,is_banned,timeout_until");
+        if (moderationError) throw moderationError;
+        moderationMap = new Map((data || []).map((row) => [row.user_id, row]));
+        renderAdminUserOptions();
+      }
+
+      async function loadAdminMessageLog() {
+        if (!isAdmin) return;
+        const { data: rows, error: messagesError } = await sbClient
+          .from("messages")
+          .select("id,kind,dm_a,dm_b,group_id,sender_id,text,created_at")
+          .order("created_at", { ascending: false })
+          .limit(120);
+        if (messagesError) throw messagesError;
+
+        const userIds = [...new Set((rows || []).flatMap((m) => [m.sender_id, m.dm_a, m.dm_b]).filter(Boolean))];
+        const groupIds = [...new Set((rows || []).map((m) => m.group_id).filter(Boolean))];
+
+        const [profileResult, groupsResult] = await Promise.all([
+          userIds.length
+            ? sbClient.from("profiles").select("id,email").in("id", userIds)
+            : Promise.resolve({ data: [], error: null }),
+          groupIds.length
+            ? sbClient.from("chat_groups").select("id,name").in("id", groupIds)
+            : Promise.resolve({ data: [], error: null })
+        ]);
+
+        if (profileResult.error) throw profileResult.error;
+        if (groupsResult.error) throw groupsResult.error;
+
+        const emailById = new Map((profileResult.data || []).map((p) => [p.id, p.email]));
+        const nameByGroupId = new Map((groupsResult.data || []).map((g) => [g.id, g.name]));
+
+        adminMessageLog.innerHTML = (rows || []).map((m) => {
+          const sender = emailById.get(m.sender_id) || "Unknown";
+          let target = "Unknown";
+          if (m.kind === "group") {
+            target = `#${nameByGroupId.get(m.group_id) || "group"}`;
+          } else {
+            const otherId = m.sender_id === m.dm_a ? m.dm_b : m.dm_a;
+            target = emailById.get(otherId) || "Unknown";
+          }
+          return `<div class="admin-log-item"><div class="muted">${new Date(m.created_at).toLocaleString()}</div><b>${esc(sender)}</b> → ${esc(target)}: ${esc(m.text)}</div>`;
+        }).join("") || `<div class="muted">No messages yet.</div>`;
+      }
+
+      function selectedAdminUserId() {
+        const raw = adminUserSelect.value;
+        return raw ? decodeURIComponent(raw) : "";
+      }
+
+      async function applyModeration(action) {
+        if (!isAdmin) return setError("Admin access required.");
+        const userId = selectedAdminUserId();
+        if (!userId) return setError("Select a user first.");
+
+        let payload;
+        if (action === "ban") {
+          payload = { user_id: userId, is_banned: true, timeout_until: null, updated_by: me.id, updated_at: new Date().toISOString() };
+        } else if (action === "clear") {
+          payload = { user_id: userId, is_banned: false, timeout_until: null, updated_by: me.id, updated_at: new Date().toISOString() };
+        } else {
+          const minutes = Number(timeoutMinutesInput.value || "0");
+          if (!Number.isFinite(minutes) || minutes < 1) return setError("Timeout must be at least 1 minute.");
+          const timeoutUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+          payload = { user_id: userId, is_banned: false, timeout_until: timeoutUntil, updated_by: me.id, updated_at: new Date().toISOString() };
+        }
+
+        const { error: upsertError } = await sbClient
+          .from("user_moderation")
+          .upsert(payload, { onConflict: "user_id" });
+        if (upsertError) return setError(upsertError.message);
+        adminModerationStatus.textContent = "Moderation updated.";
+        await loadModerationMap();
+      }
+
+      async function sendMessageText(text) {
+        if (!current) return setError("Select a contact or group first.");
+        const cleanText = String(text || "").trim();
+        if (!cleanText) return;
+        if (!isAdmin && !ALLOWED_MESSAGES.has(cleanText)) {
+          return setError("Only admin can send typed messages.");
+        }
+
+        const blocked = restrictionMessage();
+        if (blocked) return setError(blocked);
+
+        let payload;
+        if (current.kind === "dm") {
+          const [a, b] = dmPair(me.id, current.userId);
+          payload = { kind: "dm", dm_a: a, dm_b: b, sender_id: me.id, text: cleanText };
+        } else {
+          payload = { kind: "group", group_id: current.group.id, sender_id: me.id, text: cleanText };
+        }
+        const { error: insertError } = await sbClient.from("messages").insert(payload);
+        if (insertError) return setError(insertError.message);
+        setError("");
+        customMessageInput.value = "";
+        await refreshCurrentHistory();
       }
 
       function initQuickChatOptions() {
@@ -309,17 +550,34 @@
       async function startSession(user) {
         me = { id: user.id, email: user.email.toLowerCase() };
         await ensureProfile(user);
+        await fetchAdminState();
+        await loadMyModeration();
         el("meLabel").textContent = `You: ${me.email}`;
         await loadContacts();
         await loadGroups();
+        if (isAdmin) {
+          await loadAdminProfiles();
+          await loadModerationMap();
+          await loadAdminMessageLog();
+        } else {
+          adminMessageLog.innerHTML = "";
+          adminModerationStatus.textContent = "";
+        }
         setLoggedIn(true);
-        setError("");
+        setError(restrictionMessage());
         if (refreshTimer) clearInterval(refreshTimer);
         refreshTimer = setInterval(async () => {
           try {
+            await fetchAdminState();
+            await loadMyModeration();
             await loadContacts();
             await loadGroups();
             await refreshCurrentHistory();
+            if (isAdmin) {
+              await loadAdminProfiles();
+              await loadModerationMap();
+              await loadAdminMessageLog();
+            }
           } catch (refreshError) {
             // Keep UI responsive if background refresh fails intermittently.
           }
@@ -426,42 +684,62 @@
       };
 
       window.sendQuickMessage = async (text) => {
-        if (!current) return setError("Select a contact or group first.");
-        const cleanText = String(text || "").trim();
-        if (!ALLOWED_MESSAGES.has(cleanText)) return setError("Only emoji and preset quick messages are allowed.");
-        let payload;
-        if (current.kind === "dm") {
-          const [a, b] = dmPair(me.id, current.userId);
-          payload = { kind: "dm", dm_a: a, dm_b: b, sender_id: me.id, text: cleanText };
-        } else {
-          payload = { kind: "group", group_id: current.group.id, sender_id: me.id, text: cleanText };
-        }
-        const { error: insertError } = await sbClient.from("messages").insert(payload);
-        if (insertError) return setError(insertError.message);
-        await refreshCurrentHistory();
+        await sendMessageText(text);
       };
 
       el("sendBtn").onclick = async () => {
         const selected = el("quickMessageSelect").value;
         if (!selected) return setError("Choose a quick message first.");
-        await window.sendQuickMessage(selected);
+        await sendMessageText(selected);
       };
+
+      sendCustomBtn.onclick = async () => {
+        await sendMessageText(customMessageInput.value);
+      };
+
+      claimAdminBtn.onclick = async () => {
+        if (!me) return;
+        const payload = { email: me.email, created_by: me.id };
+        const { error: insertError } = await sbClient.from("admin_users").insert(payload);
+        if (insertError) return setError(insertError.message);
+        await fetchAdminState();
+        if (isAdmin) {
+          await loadAdminProfiles();
+          await loadModerationMap();
+          await loadAdminMessageLog();
+          setError("");
+        }
+      };
+
+      timeoutBtn.onclick = async () => { await applyModeration("timeout"); };
+      banBtn.onclick = async () => { await applyModeration("ban"); };
+      unbanBtn.onclick = async () => { await applyModeration("clear"); };
 
       el("logoutBtn").onclick = async () => {
         await sbClient.auth.signOut();
         if (refreshTimer) clearInterval(refreshTimer);
         refreshTimer = null;
         me = null;
+        isAdmin = false;
+        hasAdmin = false;
+        myModeration = null;
+        allProfiles = [];
+        moderationMap = new Map();
         current = null;
         contacts = [];
         groups = [];
         byConversation.clear();
         messages.innerHTML = "";
+        adminMessageLog.innerHTML = "";
+        adminModerationStatus.textContent = "";
+        customMessageInput.value = "";
+        renderAdminControls();
         chatTitle.textContent = "Select a contact or group";
         setLoggedIn(false);
       };
 
       el("quickMessageSelect").addEventListener("keydown", (e) => { if (e.key === "Enter") el("sendBtn").click(); });
+      customMessageInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendCustomBtn.click(); });
       el("passwordInput").addEventListener("keydown", (e) => { if (e.key === "Enter") auth("login"); });
 
       if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/service-worker.js?v=2");
@@ -481,6 +759,7 @@
       };
 
       async function bootstrap() {
+        renderAdminControls();
         if (!window.MESSENGER_CONFIG || !window.MESSENGER_CONFIG.supabaseUrl || !window.MESSENGER_CONFIG.supabaseAnonKey) {
           setError("Missing Supabase config. Edit /static/config.js with your project URL and anon key.");
           return;
