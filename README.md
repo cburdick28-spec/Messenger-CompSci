@@ -9,7 +9,6 @@ Messenger Chat is now configured for **Vercel + Supabase**.
    - `supabase/schema.sql`
 3. In Supabase Auth:
    - Enable Email sign-in.
-   - (Optional) disable email confirmation for faster testing.
 4. Copy:
    - Project URL
    - Anon public key
@@ -21,7 +20,7 @@ Admin access is hard-locked in `supabase/schema.sql` to:
 
 Only that email can use the admin panel and send custom typed messages. All other users are limited to preset quick messages/emojis.
 
-## 2. Add Supabase keys in this repo
+## 2. Configure frontend Supabase keys
 
 Edit `static/config.js`:
 
@@ -32,23 +31,65 @@ window.MESSENGER_CONFIG = {
 };
 ```
 
-Commit and push.
+## 3. Configure free registration approval (Supabase Edge Functions + Brevo)
 
-## 3. Deploy on Vercel
+This repo now uses a **free approval flow**:
+- Register submits a pending request
+- `cburdick28@brewstermadrid.com` receives an approval email
+- Approving sends the user an invite email to set their password
 
-Deploy this repo on Vercel normally.
+### A) Install Supabase CLI and login
+
+```bash
+brew install supabase/tap/supabase
+supabase login
+```
+
+### B) Link your project
+
+```bash
+cd MessengerEmoji
+supabase link --project-ref hnjziardboghvhyhyhcx
+```
+
+### C) Set function secrets
+
+Use a free Brevo key (https://www.brevo.com/):
+
+```bash
+supabase secrets set \
+  BREVO_API_KEY="YOUR_BREVO_API_KEY" \
+  APPROVER_EMAIL="cburdick28@brewstermadrid.com" \
+  APPROVAL_FROM_EMAIL="cburdick28@brewstermadrid.com" \
+  APPROVAL_BASE_URL="https://hnjziardboghvhyhyhcx.supabase.co" \
+  PUBLIC_APP_URL="https://YOUR_VERCEL_APP_URL" \
+  APPROVAL_TOKEN_TTL_HOURS="24"
+```
+
+### D) Deploy functions
+
+```bash
+supabase functions deploy request-registration
+supabase functions deploy approve-registration
+```
+
+The app calls:
+- `POST /functions/v1/request-registration` from Register
+- `GET /functions/v1/approve-registration?...` from the admin email link
+
+## 4. Deploy on Vercel
 
 - Root path serves `index.html`
 - App UI is `/static/index.html`
 - Vercel config is static-only (`vercel.json`)
 
-## Local preview
+Deploy this repo on Vercel normally.
+
+## Local preview (legacy Python server)
 
 You can still run the old local Python server:
 
 ```bash
 pip install -r requirements.txt
-python server.py
+python3 server.py
 ```
-
-For Vercel behavior, use static hosting and Supabase config.

@@ -59,6 +59,17 @@ create table if not exists public.user_moderation (
   updated_by uuid references public.profiles(id) on delete set null
 );
 
+create table if not exists public.pending_registrations (
+  email text primary key,
+  token_hash text not null,
+  token_expires_at timestamptz not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  requested_at timestamptz not null default now(),
+  approved_at timestamptz,
+  approved_by text,
+  invite_sent_at timestamptz
+);
+
 create or replace function public.app_has_admin()
 returns boolean
 language sql
@@ -134,6 +145,7 @@ alter table public.group_members enable row level security;
 alter table public.messages enable row level security;
 alter table public.admin_users enable row level security;
 alter table public.user_moderation enable row level security;
+alter table public.pending_registrations enable row level security;
 
 drop policy if exists profiles_select_all on public.profiles;
 create policy profiles_select_all on public.profiles

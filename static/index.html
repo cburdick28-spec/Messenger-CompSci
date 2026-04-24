@@ -49,7 +49,7 @@
         <p class="muted">Vercel + Supabase mode.</p>
         <input id="emailInput" placeholder="Email address" />
         <div style="height:8px"></div>
-        <input id="passwordInput" type="password" placeholder="Password (min 6 chars)" />
+        <input id="passwordInput" type="password" placeholder="Password (login only)" />
         <div style="height:10px"></div>
         <div style="display:flex; gap:8px;">
           <button id="registerBtn" onclick="document.getElementById('error').textContent='Working...'; if (window.__messengerAuth) { window.__messengerAuth('register'); } else { document.getElementById('error').textContent=(window.__messengerInitError || 'App failed to initialize. Reload with ?v=8'); }">Register</button>
@@ -192,6 +192,11 @@
 
       function setError(message) {
         error.textContent = message || "";
+      }
+
+      function registrationFunctionUrl() {
+        const base = String(window.MESSENGER_CONFIG.supabaseUrl || "").replace(/\/+$/, "");
+        return `${base}/functions/v1/request-registration`;
       }
 
       function setLoggedIn(loggedIn) {
@@ -588,9 +593,12 @@
         try {
           const email = el("emailInput").value.trim().toLowerCase();
           const password = el("passwordInput").value.trim();
-          if (!email || !password) return setError("Enter email and password.");
-          if (password.length < 6) return setError("Password must be at least 6 characters.");
+          if (!email) return setError("Enter your email address.");
           if (!email.includes("@")) return setError("Enter a valid email address.");
+          if (action === "login") {
+            if (!password) return setError("Enter your password to log in.");
+            if (password.length < 6) return setError("Password must be at least 6 characters.");
+          }
           setError("Working...");
 
           const withTimeout = (promise, ms = 12000) =>
@@ -601,19 +609,36 @@
               )
             ]);
 
-          let result;
           if (action === "register") {
-            result = await withTimeout(sbClient.auth.signUp({ email, password }));
-          } else {
-            result = await withTimeout(sbClient.auth.signInWithPassword({ email, password }));
+            const response = await withTimeout(
+              fetch(registrationFunctionUrl(), {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "apikey": window.MESSENGER_CONFIG.supabaseAnonKey,
+                  "Authorization": `Bearer ${window.MESSENGER_CONFIG.supabaseAnonKey}`
+                },
+                body: JSON.stringify({ email })
+              })
+            );
+            let payload = {};
+            try {
+              payload = await response.json();
+            } catch (_parseError) {
+              payload = {};
+            }
+            if (!response.ok) {
+              return setError(payload.error || "Could not submit registration request.");
+            }
+            return setError(
+              payload.message ||
+              "Request sent. cburdick28@brewstermadrid.com must approve it first. After approval, check your email invite to set your password."
+            );
           }
+
+          const result = await withTimeout(sbClient.auth.signInWithPassword({ email, password }));
           if (result.error) return setError(result.error.message);
           if (!result.data.user) return setError("Could not authenticate. Try again.");
-
-          // With email confirmation enabled, signUp may return a user but no session.
-          if (!result.data.session) {
-            return setError("Check your email and confirm your account, then log in.");
-          }
 
           await startSession(result.data.user);
         } catch (authError) {
