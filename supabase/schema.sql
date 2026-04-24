@@ -87,7 +87,10 @@ as $$
     select 1
     from public.profiles p
     where p.id = auth.uid()
-      and lower(p.email) = 'cburdick28@brewstermadrid.com'
+      and lower(p.email) in (
+        'cburdick28@brewstermadrid.com',
+        'lbondi28@brewstermadrid.com'
+      )
   );
 $$;
 
