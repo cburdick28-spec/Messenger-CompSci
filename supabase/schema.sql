@@ -89,7 +89,8 @@ as $$
     where p.id = auth.uid()
       and lower(p.email) in (
         'cburdick28@brewstermadrid.com',
-        'lbondi28@brewstermadrid.com'
+        'lbondi28@brewstermadrid.com',
+        'arosario28@brewstermadrid.com'
       )
   );
 $$;

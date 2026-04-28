@@ -18,8 +18,9 @@ Messenger Chat is now configured for **Vercel + Supabase**.
 Admin access is hard-locked in `supabase/schema.sql` to:
 - `cburdick28@brewstermadrid.com`
 - `lbondi28@brewstermadrid.com`
+- `arosario28@brewstermadrid.com`
 
-Both emails can use the admin panel and send custom typed messages. Approval emails for new registrations still go to `cburdick28@brewstermadrid.com`.
+These emails can use the admin panel and send custom typed messages. Approval emails for new registrations still go to `cburdick28@brewstermadrid.com`.
 All other users are limited to preset quick messages/emojis.
 
 ## 2. Configure frontend Supabase keys
