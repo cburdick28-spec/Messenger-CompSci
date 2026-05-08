@@ -121,7 +121,7 @@ const TRIVIA_QUESTIONS = [
   }
 ];
 
-const HOUSES = [
+let HOUSES = [
   { name: "Red",   pts: 342, color: "#CC0000", barColor: "#FF6B6B",  chartColor: "#CC0000", icon: "🔴" },
   { name: "Blue",  pts: 315, color: "#1A4FCC", barColor: "#88AAFF",  chartColor: "#1A4FCC", icon: "🔵" },
   { name: "White", pts: 289, color: "#DDDDDD", barColor: "#FFFFFF",  chartColor: "#9CA3AF", icon: "⚪" },
@@ -982,7 +982,14 @@ function setStar1(n) {
   renderApp();
 }
 
-function submitSurvey1() {
+async function submitSurvey1() {
+  if (sb) {
+    const comment = document.getElementById("survey1-comment");
+    await sb.from("survey_responses").insert({
+      survey_id: "dining",
+      response: { rating: state.survey1.rating, comment: comment ? comment.value : "" },
+    });
+  }
   state.survey1.submitted = true;
   renderApp();
 }
@@ -992,8 +999,15 @@ function setSurvey2(i) {
   renderApp();
 }
 
-function submitSurvey2() {
+async function submitSurvey2() {
   if (state.survey2.selected === null) return;
+  if (sb) {
+    const opts = ["Excellent — love it here!","Good — minor improvements needed","Fair — several issues","Poor — needs major changes"];
+    await sb.from("survey_responses").insert({
+      survey_id: "dorm",
+      response: { selected: state.survey2.selected, answer: opts[state.survey2.selected] },
+    });
+  }
   state.survey2.submitted = true;
   renderApp();
 }
@@ -1005,13 +1019,20 @@ function setMsgCat(i) {
   renderApp();
 }
 
-function sendAnonMessage() {
+async function sendAnonMessage() {
   const el = document.getElementById("anon-msg");
   const msg = el ? el.value.trim() : "";
   if (!msg) {
     el && (el.style.borderColor = "var(--red)");
     el && (el.placeholder = "Please write a message before sending...");
     return;
+  }
+  const cats = ["General","Academic","Social","Wellbeing","Facilities","Other"];
+  if (sb) {
+    await sb.from("messages").insert({
+      category: state.messageCategory != null ? cats[state.messageCategory] : null,
+      content:  msg,
+    });
   }
   state.messageSent = true;
   renderApp();
@@ -1024,12 +1045,21 @@ function setReportCat(i) {
   renderApp();
 }
 
-function submitReport() {
+async function submitReport() {
   const desc = document.getElementById("report-desc");
   if (!desc || !desc.value.trim()) {
     desc && (desc.style.borderColor = "var(--red)");
     desc && (desc.placeholder = "Please describe the issue before submitting...");
     return;
+  }
+  const cats = ["Safety","Bullying","Facilities","Academic","Personal","Other"];
+  const loc  = document.getElementById("report-loc");
+  if (sb) {
+    await sb.from("problem_reports").insert({
+      category:    state.reportCategory != null ? cats[state.reportCategory] : null,
+      description: desc.value.trim(),
+      location:    loc ? loc.value.trim() : null,
+    });
   }
   state.reportSent = true;
   renderApp();
@@ -1072,7 +1102,7 @@ function setPriority(p) {
   renderApp();
 }
 
-function sendBroadcast() {
+async function sendBroadcast() {
   const title = document.getElementById("bc-title");
   const msg   = document.getElementById("bc-msg");
   if (!title || !title.value.trim() || !msg || !msg.value.trim()) {
@@ -1082,12 +1112,22 @@ function sendBroadcast() {
   }
   const now = new Date();
   const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  state.broadcasts.push({
+  const entry = {
     title: title.value.trim(),
     msg:   msg.value.trim(),
     priority: state.adminPriority,
     time: timeStr,
-  });
+  };
+  if (sb) {
+    await sb.from("broadcasts").insert({
+      title:    entry.title,
+      message:  entry.msg,
+      priority: entry.priority,
+    });
+    await loadBroadcasts();
+  } else {
+    state.broadcasts.unshift(entry);
+  }
   renderApp();
 }
 
@@ -1133,5 +1173,48 @@ function cancelPress() {
   }
 }
 
+/* ===== SUPABASE ===== */
+
+const SUPABASE_URL = "https://hnjziardboghvhyhyhcx.supabase.co";
+const SUPABASE_KEY = "sb_publishable_l13qSZTD_O11G6cSkfLS_w_1ej0ckZy";
+let sb = null;
+
+async function initApp() {
+  try {
+    const { createClient } = window.supabase;
+    sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+    await Promise.all([loadHousePoints(), loadBroadcasts()]);
+  } catch (e) {
+    console.warn("Supabase init failed, running in offline mode:", e);
+  }
+  renderApp("fade-in");
+}
+
+async function loadHousePoints() {
+  if (!sb) return;
+  const { data, error } = await sb.from("house_points").select("*").order("points", { ascending: false });
+  if (error || !data || data.length === 0) return;
+  HOUSES = data.map(row => ({
+    name:       row.house_name,
+    pts:        row.points,
+    color:      row.chart_color,
+    barColor:   row.bar_color,
+    chartColor: row.chart_color,
+    icon:       row.icon,
+  }));
+}
+
+async function loadBroadcasts() {
+  if (!sb) return;
+  const { data, error } = await sb.from("broadcasts").select("*").order("created_at", { ascending: false }).limit(10);
+  if (error || !data) return;
+  state.broadcasts = data.map(b => ({
+    title:    b.title,
+    msg:      b.message,
+    priority: b.priority,
+    time:     new Date(b.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+  }));
+}
+
 /* ===== INIT ===== */
-renderApp("fade-in");
+initApp();
