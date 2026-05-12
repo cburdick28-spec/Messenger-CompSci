@@ -1105,13 +1105,17 @@ async function requestTeacherAccess() {
   const token       = crypto.randomUUID();
   const approvalUrl = `${APP_URL}?approve=${token}`;
 
-  // Store pending teacher in Supabase (non-blocking — may fail if table not yet created)
-  try {
-    if (sb) {
-      await sb.from("users").insert({ name, email, role: "teacher", status: "pending", approval_token: token });
+  // Store pending teacher in Supabase
+  if (sb) {
+    const { error: dbErr } = await sb.from("users").insert({
+      name, email, role: "teacher", status: "pending", approval_token: token
+    });
+    if (dbErr) {
+      console.error("Supabase insert error:", dbErr);
+      state.loginError = `Database error: ${dbErr.message}. Please ask the admin to run the users table SQL in Supabase.`;
+      renderApp();
+      return;
     }
-  } catch(e) {
-    console.warn("Supabase users insert failed:", e);
   }
 
   // Save session locally so teacher sees pending screen on return

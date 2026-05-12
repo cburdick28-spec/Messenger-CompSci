@@ -1,8 +1,11 @@
 -- ===== BREWSTER APP — SUPABASE SCHEMA =====
 -- Run this in the Supabase SQL Editor:
--- https://supabase.com/dashboard/project/hnjziardboghvhyhyhcx/sql
+-- https://supabase.com/dashboard/project/hnjziardboghvhyhyhcx/sql/new
 
--- Anonymous messages to Ms. Ellie
+-- =============================================
+-- STEP 1: Run this block first (tables + seed)
+-- =============================================
+
 CREATE TABLE IF NOT EXISTS messages (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   category text,
@@ -10,7 +13,6 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at timestamptz DEFAULT now()
 );
 
--- Survey responses
 CREATE TABLE IF NOT EXISTS survey_responses (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   survey_id text NOT NULL,
@@ -18,7 +20,6 @@ CREATE TABLE IF NOT EXISTS survey_responses (
   created_at timestamptz DEFAULT now()
 );
 
--- Problem reports
 CREATE TABLE IF NOT EXISTS problem_reports (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   category text,
@@ -27,7 +28,6 @@ CREATE TABLE IF NOT EXISTS problem_reports (
   created_at timestamptz DEFAULT now()
 );
 
--- House points
 CREATE TABLE IF NOT EXISTS house_points (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   house_name text UNIQUE NOT NULL,
@@ -38,7 +38,6 @@ CREATE TABLE IF NOT EXISTS house_points (
   updated_at timestamptz DEFAULT now()
 );
 
--- Seed house points (safe — skips if already exists)
 INSERT INTO house_points (house_name, points, bar_color, chart_color, icon) VALUES
   ('Red',   342, '#FF6B6B', '#CC0000', '🔴'),
   ('Blue',  315, '#88AAFF', '#1A4FCC', '🔵'),
@@ -46,7 +45,6 @@ INSERT INTO house_points (house_name, points, bar_color, chart_color, icon) VALU
   ('Black', 271, '#AAAAAA', '#374151', '⚫')
 ON CONFLICT (house_name) DO NOTHING;
 
--- Staff broadcasts
 CREATE TABLE IF NOT EXISTS broadcasts (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   title text NOT NULL,
@@ -55,7 +53,7 @@ CREATE TABLE IF NOT EXISTS broadcasts (
   created_at timestamptz DEFAULT now()
 );
 
--- Users / auth table
+-- USERS TABLE (required for teacher approval flow)
 CREATE TABLE IF NOT EXISTS users (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   name text NOT NULL,
@@ -67,32 +65,53 @@ CREATE TABLE IF NOT EXISTS users (
   approved_at timestamptz
 );
 
--- ===== ROW LEVEL SECURITY =====
+-- =============================================
+-- STEP 2: Enable Row Level Security
+-- =============================================
 
-ALTER TABLE users            ENABLE ROW LEVEL SECURITY;
-ALTER TABLE messages        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE survey_responses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE problem_reports  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE house_points     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE broadcasts       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE survey_responses  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE problem_reports   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE house_points      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE broadcasts        ENABLE ROW LEVEL SECURITY;
 
--- Users table policies
+-- =============================================
+-- STEP 3: Create RLS policies
+-- =============================================
+
 DO $$ BEGIN
   CREATE POLICY "Public insert users" ON users FOR INSERT WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 DO $$ BEGIN
-  CREATE POLICY "Public read users"   ON users FOR SELECT USING (true);
+  CREATE POLICY "Public read users" ON users FOR SELECT USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 DO $$ BEGIN
   CREATE POLICY "Public update users" ON users FOR UPDATE USING (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- Students can submit (insert) anonymously
-CREATE POLICY IF NOT EXISTS "Public insert messages"         ON messages        FOR INSERT WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Public insert surveys"          ON survey_responses FOR INSERT WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Public insert reports"          ON problem_reports  FOR INSERT WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Public insert broadcasts"       ON broadcasts       FOR INSERT WITH CHECK (true);
+DO $$ BEGIN
+  CREATE POLICY "Public insert messages" ON messages FOR INSERT WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- Anyone can read house standings and broadcasts
-CREATE POLICY IF NOT EXISTS "Public read house points"       ON house_points FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "Public read broadcasts"         ON broadcasts   FOR SELECT USING (true);
+DO $$ BEGIN
+  CREATE POLICY "Public insert surveys" ON survey_responses FOR INSERT WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Public insert reports" ON problem_reports FOR INSERT WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Public insert broadcasts" ON broadcasts FOR INSERT WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Public read house points" ON house_points FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Public read broadcasts" ON broadcasts FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
