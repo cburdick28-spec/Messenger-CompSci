@@ -267,7 +267,7 @@ function renderSidebar() {
   return `
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <div class="sidebar-bobcat">${BOBCAT_SVG_WHITE}</div>
+      <div class="sidebar-bobcat"><img src="bobcat.png" alt="Brewster Bobcat" style="width:72px;height:72px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4))"/></div>
       <div class="sidebar-title">Brewster App</div>
       <div class="sidebar-sub">Brewster Academy</div>
     </div>
@@ -313,7 +313,7 @@ function screenSplash() {
 
   return `
   <div class="app-screen fade-in splash">
-    <div class="splash-bobcat">${BOBCAT_SVG_WHITE}</div>
+    <div class="splash-bobcat"><img src="bobcat.png" alt="Brewster Bobcat" style="width:160px;height:160px;object-fit:contain;filter:drop-shadow(0 4px 24px rgba(0,0,0,0.35))"/></div>
     <div class="splash-school-name">Brewster Academy · Est. 1820</div>
     <div class="splash-app-name">Brewster App</div>
     <div class="splash-tagline">Go Bobcats! 🐾</div>
@@ -852,7 +852,7 @@ function screenLogin() {
   if (state.loginStep === "student-form") return screenStudentForm();
   return `
   <div class="login-screen">
-    <div class="login-logo">${BOBCAT_SVG_WHITE}</div>
+    <div class="login-logo"><img src="bobcat.png" alt="Brewster Bobcat" style="width:120px;height:120px;object-fit:contain"/></div>
     <div class="login-school-tag">Brewster Academy · Est. 1820</div>
     <div class="login-app-title">Brewster App</div>
     <div class="login-welcome">Who are you joining as today?</div>
