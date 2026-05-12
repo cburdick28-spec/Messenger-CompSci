@@ -246,51 +246,54 @@ const ICON = {
 
 /* ===== COMMON COMPONENTS ===== */
 
-function renderHeader(title, backBtn = true, rightSlot = "") {
-  if (!backBtn) {
-    return `
-    <header class="app-header">
-      <div class="header-brand">
-        <div class="header-bobcat">${BOBCAT_SVG_WHITE}</div>
-        <div class="header-title">
-          <div class="header-title-main">Brewster App</div>
-          <div class="header-title-sub">Brewster Academy</div>
-        </div>
-      </div>
-      <div class="header-actions">
-        <button class="header-icon-btn" onclick="navigate('home')" aria-label="Notifications">${ICON.bell}</button>
-        <button class="header-icon-btn" style="background:rgba(255,255,255,0.18)" aria-label="Profile">
-          <svg viewBox="0 0 24 24" fill="white" width="18" height="18"><path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v2h20v-2c0-3.3-6.7-5-10-5z"/></svg>
-        </button>
-      </div>
-    </header>`;
-  }
-  return `
-  <header class="app-header has-back">
-    <button class="back-btn" onclick="goBack()">${ICON.back}</button>
-    <div class="header-screen-title">${title}</div>
-    ${rightSlot}
-  </header>`;
-}
-
-function renderBottomNav(active) {
+function renderSidebar() {
   const items = [
-    { id: "home",    label: "Home",    icon: ICON.home,     badge: 0 },
-    { id: "house",   label: "Houses",  icon: ICON.events,   badge: 0 },
-    { id: "message", label: "Message", icon: ICON.messages, badge: 1 },
-    { id: "profile", label: "Profile", icon: ICON.profile,  badge: 0 },
+    { id: "home",            label: "Dashboard",        icon: ICON.home },
+    { id: "house",           label: "House Standings",  icon: ICON.events },
+    { id: "surveys",         label: "Surveys",          icon: "📋" },
+    { id: "message",         label: "Message Ms. Ellie",icon: ICON.messages },
+    { id: "report",          label: "Report a Problem", icon: "🤔" },
+    { id: "emergency-panel", label: "Emergency Panel",  icon: "🔐" },
   ];
   return `
-  <nav class="bottom-nav">
-    ${items.map(item => `
-      <button class="nav-item ${active === item.id ? "active" : ""}" onclick="navigate('${item.id}')">
-        ${item.badge ? `<div class="nav-badge">${item.badge}</div>` : ""}
-        ${item.icon}
-        <span>${item.label}</span>
-      </button>
-    `).join("")}
-  </nav>`;
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-bobcat">${BOBCAT_SVG_WHITE}</div>
+      <div class="sidebar-title">Brewster App</div>
+      <div class="sidebar-sub">Brewster Academy</div>
+    </div>
+    <nav class="sidebar-nav">
+      ${items.map(item => `
+        <button class="sidebar-item ${state.screen === item.id ? "active" : ""}" onclick="navigate('${item.id}')">
+          <span class="sidebar-item-icon">${item.icon}</span>
+          <span>${item.label}</span>
+        </button>`).join("")}
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-footer-text">Est. 1820 · Wolfeboro, NH<br>Go Bobcats! 🐾</div>
+    </div>
+  </aside>`;
 }
+
+function renderTopBar(title = "", backBtn = false) {
+  const left = backBtn
+    ? `<button class="top-bar-back-btn" onclick="goBack()">${ICON.back} ${title}</button>`
+    : title
+      ? `<div class="top-bar-screen-title">${title}</div>`
+      : `<div>
+           <div class="top-bar-greeting">${getDayGreeting()}, Bobcat! 🐾</div>
+           <div class="top-bar-date">${getTodayLabel()}</div>
+         </div>`;
+  return `
+  <div class="top-bar">
+    <div class="top-bar-left">${left}</div>
+    <div class="top-bar-right">
+      <button class="top-emergency-btn" onclick="openEmergency()">🚨 EMERGENCY</button>
+    </div>
+  </div>`;
+}
+
+function renderBottomNav() { return ""; }
 
 /* ===== SCREENS ===== */
 
@@ -317,7 +320,7 @@ function screenSplash() {
 /* --- HOME DASHBOARD --- */
 function screenHome() {
   const maxPts = Math.max(...HOUSES.map(h => h.pts));
-  const houseRows = HOUSES.slice(0, 3).map(h => `
+  const houseRows = HOUSES.map(h => `
     <div class="house-mini-row">
       <div class="house-mini-name">${h.icon} ${h.name}</div>
       <div class="house-mini-track">
@@ -326,41 +329,28 @@ function screenHome() {
       <div class="house-mini-pts">${h.pts}</div>
     </div>`).join("");
 
-  const adminCard = state.isAdmin ? `
-    <div class="admin-card" onclick="navigate('emergency-panel')">
-      <div class="admin-icon">🔐</div>
+  const adminCard = `
+    <div class="admin-card dash-third" onclick="navigate('emergency-panel')">
+      <div class="admin-icon">${state.isAdmin ? "🔐" : "🛡️"}</div>
       <div class="admin-text">
-        <div class="admin-title">Emergency Panel</div>
-        <div class="admin-sub">Broadcast alerts to all students</div>
+        <div class="admin-title">${state.isAdmin ? "Emergency Panel" : "Staff Emergency Panel"}</div>
+        <div class="admin-sub">${state.isAdmin ? "Broadcast alerts to all students" : "Authorized personnel only"}</div>
       </div>
-      <div class="admin-badge">STAFF</div>
-    </div>` : `
-    <div class="admin-card" onclick="navigate('emergency-panel')">
-      <div class="admin-icon">🛡️</div>
-      <div class="admin-text">
-        <div class="admin-title">Staff Emergency Panel</div>
-        <div class="admin-sub">Authorized personnel only</div>
-      </div>
-      <div class="admin-badge">SECURE</div>
+      <div class="admin-badge">${state.isAdmin ? "STAFF" : "SECURE"}</div>
     </div>`;
 
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("", false)}
+    ${renderTopBar()}
     <div class="dashboard-scroll">
-      <div class="dashboard-greeting">
-        <div class="greeting-label">${getDayGreeting()}, Bobcat!</div>
-        <div class="greeting-text">Welcome Back 🐾</div>
-        <div class="greeting-date">${getTodayLabel()}</div>
-      </div>
 
-      <!-- Trivia Countdown Card -->
-      <div class="trivia-card" onclick="navigate('trivia')">
+      <!-- Trivia Countdown — spans 2 cols -->
+      <div class="trivia-card dash-half" onclick="navigate('trivia')">
         <div class="trivia-badge">
           <span class="live-dot"></span> School Spirit
         </div>
         <div class="trivia-card-title">Trivia Game</div>
-        <div class="trivia-card-sub">Test your Brewster knowledge!</div>
+        <div class="trivia-card-sub">Test your Brewster Academy knowledge!</div>
         <div class="trivia-countdown-row">
           <div>
             <div style="font-size:11px;opacity:0.65;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px;">Next Game In</div>
@@ -370,8 +360,8 @@ function screenHome() {
         </div>
       </div>
 
-      <!-- House Points Card -->
-      <div class="house-card" onclick="navigate('house')">
+      <!-- House Points — 1 col -->
+      <div class="house-card dash-third" onclick="navigate('house')">
         <div class="house-card-header">
           <div class="house-card-title">🏆 House Standings</div>
           <div class="house-card-link">View All →</div>
@@ -379,45 +369,36 @@ function screenHome() {
         <div class="house-mini-bar">${houseRows}</div>
       </div>
 
-      <!-- Surveys + Anonymous Message (2-col) -->
-      <div class="card-grid-2">
-        <div class="small-card" onclick="navigate('surveys')">
-          <div class="small-card-icon navy-bg">📋</div>
-          <div class="small-card-title">Active Surveys</div>
-          <div class="small-card-sub">Share your voice</div>
-          <div class="small-card-badge">2 Open</div>
-        </div>
-        <div class="small-card" onclick="navigate('message')">
-          <div class="small-card-icon red-bg">💬</div>
-          <div class="small-card-title">Message Ms. Ellie</div>
-          <div class="small-card-sub">Send anonymously</div>
-          <div class="small-card-badge red">Private</div>
-        </div>
+      <!-- Surveys -->
+      <div class="small-card dash-third" onclick="navigate('surveys')">
+        <div class="small-card-icon navy-bg">📋</div>
+        <div class="small-card-title">Active Surveys</div>
+        <div class="small-card-sub">Share your voice with the school</div>
+        <div class="small-card-badge">2 Open</div>
+      </div>
+
+      <!-- Anonymous Message -->
+      <div class="small-card dash-third" onclick="navigate('message')">
+        <div class="small-card-icon red-bg">💬</div>
+        <div class="small-card-title">Message Ms. Ellie</div>
+        <div class="small-card-sub">Send a private anonymous message</div>
+        <div class="small-card-badge red">Anonymous</div>
       </div>
 
       <!-- Have a Problem -->
-      <div class="problem-card" onclick="navigate('report')">
+      <div class="problem-card dash-third" onclick="navigate('report')">
         <div class="problem-icon-wrap">🤔</div>
         <div class="problem-text">
           <div class="problem-title">Have a Problem?</div>
-          <div class="problem-sub">Report an issue confidentially. We're here to help.</div>
+          <div class="problem-sub">Report an issue confidentially</div>
         </div>
         <div class="problem-arrow">${ICON.arrow}</div>
       </div>
 
-      <!-- Admin/Staff Emergency Panel -->
+      <!-- Admin Panel -->
       ${adminCard}
 
-      <!-- Emergency Button -->
-      <div class="emergency-btn-wrap">
-        <button class="emergency-btn" onclick="openEmergency()">
-          <span class="btn-icon">🚨</span>
-          <span>EMERGENCY</span>
-        </button>
-        <div class="emergency-btn-hint">For urgent situations only · Press and hold to activate</div>
-      </div>
     </div>
-    ${renderBottomNav("home")}
   </div>`;
 }
 
@@ -459,7 +440,7 @@ function screenTrivia() {
 
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("School Spirit Trivia")}
+    ${renderTopBar("School Spirit Trivia", true)}
     <div class="trivia-screen">
       <div class="trivia-progress-wrap">
         <div class="trivia-progress-top">
@@ -496,7 +477,7 @@ function screenTriviaEnd() {
   const grade = getTriviaGrade(score, total);
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("Trivia Results")}
+    ${renderTopBar("Trivia Results", true)}
     <div class="trivia-end">
       <div class="trivia-end-mascot">${grade.emoji}</div>
       <div class="trivia-end-title">${grade.msg}</div>
@@ -548,7 +529,7 @@ function screenHouse() {
 
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("House Standings")}
+    ${renderTopBar("House Standings", true)}
     <div class="house-screen">
       <div class="house-chart-card">
         <div class="house-chart-title">Current Standings</div>
@@ -558,7 +539,7 @@ function screenHouse() {
       <div class="section-title">Upcoming House Events</div>
       <div class="event-list">${eventsHTML}</div>
     </div>
-    ${renderBottomNav("house")}
+
   </div>`;
 }
 
@@ -601,7 +582,7 @@ function screenSurveys() {
 
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("Active Surveys")}
+    ${renderTopBar("Active Surveys", true)}
     <div class="surveys-screen">
       <div class="survey-card">
         <div class="survey-card-header">
@@ -626,7 +607,7 @@ function screenSurveys() {
         ${survey2Body}
       </div>
     </div>
-    ${renderBottomNav("home")}
+
   </div>`;
 }
 
@@ -635,7 +616,7 @@ function screenMessage() {
   if (state.messageSent) {
     return `
     <div class="app-screen slide-in">
-      ${renderHeader("Message Ms. Ellie")}
+      ${renderTopBar("Message Ms. Ellie", true)}
       <div class="message-screen">
         <div class="message-success">
           <div class="message-success-icon">🔒</div>
@@ -644,14 +625,14 @@ function screenMessage() {
           <button class="message-success-back" onclick="state.messageSent=false;navigate('home')">Back to Home</button>
         </div>
       </div>
-      ${renderBottomNav("message")}
+  
     </div>`;
   }
 
   const cats = ["General", "Academic", "Social", "Wellbeing", "Facilities", "Other"];
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("Message Ms. Ellie")}
+    ${renderTopBar("Message Ms. Ellie", true)}
     <div class="message-screen">
       <div class="message-privacy-banner">
         <div class="message-privacy-icon">🔒</div>
@@ -680,7 +661,7 @@ function screenMessage() {
         Send Anonymously
       </button>
     </div>
-    ${renderBottomNav("message")}
+
   </div>`;
 }
 
@@ -689,7 +670,7 @@ function screenReport() {
   if (state.reportSent) {
     return `
     <div class="app-screen slide-in">
-      ${renderHeader("Report a Problem")}
+      ${renderTopBar("Report a Problem", true)}
       <div class="report-screen">
         <div class="message-success">
           <div class="message-success-icon">📬</div>
@@ -698,7 +679,7 @@ function screenReport() {
           <button class="message-success-back" onclick="state.reportSent=false;navigate('home')">Back to Home</button>
         </div>
       </div>
-      ${renderBottomNav("home")}
+  
     </div>`;
   }
 
@@ -713,7 +694,7 @@ function screenReport() {
 
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("Report a Problem")}
+    ${renderTopBar("Report a Problem", true)}
     <div class="report-screen">
       <div class="report-info-banner">
         <div class="report-info-icon">🔐</div>
@@ -739,7 +720,7 @@ function screenReport() {
       </div>
       <button class="submit-btn" onclick="submitReport()">Submit Report</button>
     </div>
-    ${renderBottomNav("home")}
+
   </div>`;
 }
 
@@ -758,7 +739,7 @@ function screenPinEntry() {
 
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("Staff Access")}
+    ${renderTopBar("Staff Access", true)}
     <div class="pin-screen">
       <div class="pin-icon">🔐</div>
       <div class="pin-title">Staff Authorization Required</div>
@@ -798,7 +779,7 @@ function screenAdminPanel() {
 
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("Emergency Panel", true, `<button class="header-icon-btn" onclick="state.isAdmin=false;goBack()" style="margin-left:auto">🔓</button>`)}
+    ${renderTopBar("Emergency Panel", true)}
     <div class="admin-panel">
       <div class="broadcast-card">
         <div class="broadcast-title">📡 Broadcast Message</div>
@@ -866,20 +847,31 @@ function getScreenHTML(anim = "slide-in") {
 function screenProfilePlaceholder() {
   return `
   <div class="app-screen slide-in">
-    ${renderHeader("", false)}
+    ${renderTopBar("Profile")}
     <div class="page" style="display:flex;flex-direction:column;align-items:center;padding-top:60px;gap:16px;text-align:center;">
       <div style="font-size:72px">🐾</div>
       <div style="font-size:22px;font-weight:900;color:var(--text)">My Brewster Profile</div>
       <div style="font-size:14px;color:var(--text-muted);max-width:260px;line-height:1.5">Profile features coming soon! Stay tuned for personalized Bobcat stats.</div>
       <div style="margin-top:8px;padding:12px 24px;background:var(--navy);color:white;border-radius:var(--r-md);font-size:15px;font-weight:700;cursor:pointer" onclick="navigate('home')">Back to Home</div>
     </div>
-    ${renderBottomNav("profile")}
+
   </div>`;
 }
 
 function renderApp(anim = "slide-in") {
   const root = document.getElementById("root");
-  root.innerHTML = getScreenHTML(anim) + renderEmergencyOverlay();
+  if (state.screen === "splash") {
+    root.innerHTML = getScreenHTML(anim) + renderEmergencyOverlay();
+  } else {
+    root.innerHTML = `
+      <div class="app-layout">
+        ${renderSidebar()}
+        <div class="main-area">
+          ${getScreenHTML(anim)}
+        </div>
+      </div>
+      ${renderEmergencyOverlay()}`;
+  }
   bindEvents();
 }
 
