@@ -255,13 +255,14 @@ const ICON = {
 /* ===== COMMON COMPONENTS ===== */
 
 function renderSidebar() {
+  const isStudent = state.user?.role === "student";
   const items = [
     { id: "home",            label: "Dashboard",        icon: ICON.home },
     { id: "house",           label: "House Standings",  icon: ICON.events },
     { id: "surveys",         label: "Surveys",          icon: "📋" },
     { id: "message",         label: "Message Ms. Ellie",icon: ICON.messages },
     { id: "report",          label: "Report a Problem", icon: "🤔" },
-    { id: "emergency-panel", label: "Emergency Panel",  icon: "🔐" },
+    ...(!isStudent ? [{ id: "emergency-panel", label: "Emergency Panel", icon: "🔐" }] : []),
   ];
   return `
   <aside class="sidebar">
@@ -732,6 +733,17 @@ function screenReport() {
 
 /* --- EMERGENCY PANEL (PIN GATE + ADMIN VIEW) --- */
 function screenEmergencyPanel() {
+  if (state.user?.role === "student") {
+    return `
+    <div class="app-screen slide-in">
+      ${renderTopBar("Emergency Panel", true)}
+      <div class="page" style="text-align:center;padding-top:80px;">
+        <div style="font-size:64px">🚫</div>
+        <div style="font-size:22px;font-weight:900;color:var(--text);margin:16px 0">Access Restricted</div>
+        <div style="color:var(--text-muted);max-width:320px;margin:0 auto;line-height:1.6">The Emergency Panel is only available to authorized staff. If you have an emergency, use the 🚨 EMERGENCY button at the top of the screen.</div>
+      </div>
+    </div>`;
+  }
   if (!state.isAdmin) return screenPinEntry();
   return screenAdminPanel();
 }
@@ -837,6 +849,7 @@ function renderEmergencyOverlay() {
 
 function screenLogin() {
   if (state.loginStep === "teacher-form") return screenTeacherForm();
+  if (state.loginStep === "student-form") return screenStudentForm();
   return `
   <div class="login-screen">
     <div class="login-logo">${BOBCAT_SVG_WHITE}</div>
@@ -844,18 +857,49 @@ function screenLogin() {
     <div class="login-app-title">Brewster App</div>
     <div class="login-welcome">Who are you joining as today?</div>
     <div class="login-role-row">
-      <button class="login-role-btn teacher-btn" onclick="loginAsStudent('teacher-form')">
+      <button class="login-role-btn teacher-btn" onclick="state.loginStep='teacher-form';renderApp()">
         <div class="login-role-icon">🎓</div>
         <div class="login-role-name">Teacher</div>
-        <div class="login-role-desc">Staff & faculty access with admin features</div>
+        <div class="login-role-desc">Staff & faculty — requires admin approval</div>
       </button>
-      <button class="login-role-btn student-btn" onclick="loginAsStudent('student')">
+      <button class="login-role-btn student-btn" onclick="state.loginStep='student-form';renderApp()">
         <div class="login-role-icon">📚</div>
         <div class="login-role-name">Student</div>
-        <div class="login-role-desc">Jump right in — no sign-up needed</div>
+        <div class="login-role-desc">Sign in with your email and password</div>
       </button>
     </div>
     <div class="login-footer">Go Bobcats! 🐾 · Wolfeboro, New Hampshire</div>
+  </div>`;
+}
+
+function screenStudentForm() {
+  return `
+  <div class="login-form-wrap">
+    <div class="login-form-card">
+      <button class="login-form-back" onclick="state.loginStep='role';state.loginError='';renderApp()">
+        ${ICON.back} Back
+      </button>
+      <div class="login-form-icon">📚</div>
+      <div class="login-form-title">Student Sign In</div>
+      <div class="login-form-sub">Sign in with your school email. New students are registered automatically.</div>
+      <div class="login-form-group">
+        <label class="login-form-label">Display Name <span style="color:var(--text-muted);font-weight:500">(optional)</span></label>
+        <input class="login-form-input" id="student-name" type="text" placeholder="e.g. Alex Smith" autocomplete="name"/>
+      </div>
+      <div class="login-form-group">
+        <label class="login-form-label">School Email</label>
+        <input class="login-form-input" id="student-email" type="email" placeholder="you@brewstermadrid.com" autocomplete="email"/>
+      </div>
+      <div class="login-form-group">
+        <label class="login-form-label">Password</label>
+        <input class="login-form-input" id="student-password" type="password" placeholder="Min. 6 characters" autocomplete="current-password"/>
+      </div>
+      ${state.loginError ? `<div style="color:var(--red);font-size:13px;font-weight:600;margin-bottom:10px;">⚠️ ${state.loginError}</div>` : ""}
+      <button class="login-submit-btn" id="student-submit-btn" onclick="loginStudent()">
+        Sign In / Create Account →
+      </button>
+      <div class="login-privacy">🔒 New account? Just sign in — your account is created automatically. No approval needed.</div>
+    </div>
   </div>`;
 }
 
@@ -863,12 +907,12 @@ function screenTeacherForm() {
   return `
   <div class="login-form-wrap">
     <div class="login-form-card">
-      <button class="login-form-back" onclick="state.loginStep='role';renderApp()">
+      <button class="login-form-back" onclick="state.loginStep='role';state.loginError='';renderApp()">
         ${ICON.back} Back
       </button>
       <div class="login-form-icon">🎓</div>
-      <div class="login-form-title">Teacher Sign In</div>
-      <div class="login-form-sub">Enter your details and we'll send an approval request to the administrator. You'll get access once approved.</div>
+      <div class="login-form-title">Teacher Access Request</div>
+      <div class="login-form-sub">Enter your details and an approval request will be automatically emailed to the administrator. You'll get access once approved.</div>
       <div class="login-form-group">
         <label class="login-form-label">Full Name</label>
         <input class="login-form-input" id="teacher-name" type="text" placeholder="e.g. Ms. Johnson" autocomplete="name"/>
@@ -877,10 +921,11 @@ function screenTeacherForm() {
         <label class="login-form-label">School Email</label>
         <input class="login-form-input" id="teacher-email" type="email" placeholder="you@brewstermadrid.com" autocomplete="email"/>
       </div>
-      <button class="login-submit-btn teacher-submit" onclick="requestTeacherAccess()">
-        Request Teacher Access →
+      ${state.loginError ? `<div style="color:var(--red);font-size:13px;font-weight:600;margin-bottom:10px;">⚠️ ${state.loginError}</div>` : ""}
+      <button class="login-submit-btn teacher-submit" id="teacher-submit-btn" onclick="requestTeacherAccess()">
+        📧 Send Approval Request
       </button>
-      <div class="login-privacy">🔒 An approval email will be sent to the administrator. You'll be notified once access is granted.</div>
+      <div class="login-privacy">📨 An approval email will be sent automatically to <strong>cburdick28@brewstermadrid.com</strong>. No action needed on your end.</div>
     </div>
   </div>`;
 }
@@ -995,14 +1040,50 @@ function screenProfile() {
 
 /* ===== AUTH LOGIC ===== */
 
-function loginAsStudent(type) {
-  if (type === "teacher-form") {
-    state.loginStep = "teacher-form";
-    renderApp();
-    return;
+async function loginStudent() {
+  const nameEl     = document.getElementById("student-name");
+  const emailEl    = document.getElementById("student-email");
+  const passwordEl = document.getElementById("student-password");
+  const name       = nameEl?.value.trim() || "";
+  const email      = emailEl?.value.trim() || "";
+  const password   = passwordEl?.value || "";
+
+  state.loginError = "";
+  if (!email)            { state.loginError = "Please enter your email address.";  renderApp(); return; }
+  if (password.length < 6) { state.loginError = "Password must be at least 6 characters."; renderApp(); return; }
+
+  const btn = document.getElementById("student-submit-btn");
+  if (btn) { btn.textContent = "Signing in…"; btn.disabled = true; }
+
+  if (!sb) {
+    // Offline fallback
+    state.user = { id: "student-" + Date.now(), name: name || email.split("@")[0], email, role: "student", status: "approved" };
+    localStorage.setItem("brewster_user", JSON.stringify(state.user));
+    state.screen = "home"; renderApp("fade-in"); return;
   }
-  // Students log in instantly — no info needed
-  state.user = { id: "student-" + Date.now(), name: "Student", email: "", role: "student", status: "approved" };
+
+  // Try sign in first
+  let { data, error } = await sb.auth.signInWithPassword({ email, password });
+
+  // If credentials wrong, try sign up (new student)
+  if (error && (error.message.includes("Invalid login credentials") || error.message.includes("invalid_credentials"))) {
+    const signup = await sb.auth.signUp({ email, password, options: { data: { name: name || email.split("@")[0], role: "student" } } });
+    data  = signup.data;
+    error = signup.error;
+  }
+
+  if (error) {
+    state.loginError = error.message;
+    renderApp(); return;
+  }
+
+  state.user = {
+    id:     data.user.id,
+    name:   name || data.user.user_metadata?.name || email.split("@")[0],
+    email,
+    role:   "student",
+    status: "approved",
+  };
   localStorage.setItem("brewster_user", JSON.stringify(state.user));
   state.screen = "home";
   renderApp("fade-in");
@@ -1011,32 +1092,51 @@ function loginAsStudent(type) {
 async function requestTeacherAccess() {
   const nameEl  = document.getElementById("teacher-name");
   const emailEl = document.getElementById("teacher-email");
-  const name    = nameEl  ? nameEl.value.trim()  : "";
-  const email   = emailEl ? emailEl.value.trim() : "";
+  const name    = nameEl?.value.trim()  || "";
+  const email   = emailEl?.value.trim() || "";
 
-  if (!name)  { nameEl  && (nameEl.style.borderColor  = "var(--red)"); return; }
-  if (!email) { emailEl && (emailEl.style.borderColor = "var(--red)"); return; }
+  state.loginError = "";
+  if (!name)  { state.loginError = "Please enter your full name.";  renderApp(); return; }
+  if (!email) { state.loginError = "Please enter your school email."; renderApp(); return; }
 
-  // Generate approval token and store in Supabase
-  const token = crypto.randomUUID();
-  const user  = { name, email, role: "teacher", status: "pending", approval_token: token };
+  const btn = document.getElementById("teacher-submit-btn");
+  if (btn) { btn.textContent = "Sending request…"; btn.disabled = true; }
 
+  const token       = crypto.randomUUID();
+  const approvalUrl = `${APP_URL}?approve=${token}`;
+
+  // Store pending teacher in Supabase
   if (sb) {
-    const { data } = await sb.from("users").insert(user).select().single();
-    if (data) user.id = data.id;
+    await sb.from("users").insert({ name, email, role: "teacher", status: "pending", approval_token: token });
   }
 
-  // Save pending session locally
-  state.user = { id: user.id || token, name, email, role: "teacher", status: "pending", approvalToken: token };
+  // Save session locally
+  state.user = { id: token, name, email, role: "teacher", status: "pending", approvalToken: token };
   localStorage.setItem("brewster_user", JSON.stringify(state.user));
 
-  // Build approval URL and open mailto email to admin
-  const approvalUrl = `${APP_URL}?approve=${token}`;
-  const subject     = encodeURIComponent(`Teacher Access Request: ${name}`);
-  const body        = encodeURIComponent(
-    `Hello,\n\n${name} (${email}) has requested teacher access to the Brewster App.\n\nClick the link below to APPROVE their account:\n\n${approvalUrl}\n\nIf you did not expect this request, you can ignore this email.\n\n— Brewster App`
-  );
-  window.open(`mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`, "_self");
+  // Send approval email automatically via EmailJS
+  let emailSent = false;
+  try {
+    if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_EMAILJS_PUBLIC_KEY") {
+      emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        to_email:     ADMIN_EMAIL,
+        teacher_name:  name,
+        teacher_email: email,
+        approval_url:  approvalUrl,
+      });
+      emailSent = true;
+    }
+  } catch(e) {
+    console.warn("EmailJS send failed:", e);
+  }
+
+  // Fallback: open user's email client if EmailJS not configured
+  if (!emailSent) {
+    const subject = encodeURIComponent(`Teacher Access Request: ${name}`);
+    const body    = encodeURIComponent(`Hello,\n\n${name} (${email}) has requested teacher access to the Brewster App.\n\nClick to APPROVE:\n${approvalUrl}\n\n— Brewster App`);
+    window.location.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
+  }
 
   state.screen = "pending";
   renderApp();
@@ -1448,6 +1548,17 @@ function cancelPress() {
 const SUPABASE_URL = "https://hnjziardboghvhyhyhcx.supabase.co";
 const SUPABASE_KEY = "sb_publishable_l13qSZTD_O11G6cSkfLS_w_1ej0ckZy";
 let sb = null;
+
+/* EmailJS — set these up at emailjs.com (free, 200 emails/month)
+   1. Sign up at emailjs.com
+   2. Add Email Service (Gmail recommended) → copy Service ID
+   3. Create Template with variables: {{teacher_name}}, {{teacher_email}}, {{approval_url}}
+      Set "To Email" in template to: cburdick28@brewstermadrid.com
+   4. Copy Template ID and Public Key from Account → API Keys
+*/
+const EMAILJS_PUBLIC_KEY  = "YOUR_EMAILJS_PUBLIC_KEY";
+const EMAILJS_SERVICE_ID  = "YOUR_EMAILJS_SERVICE_ID";
+const EMAILJS_TEMPLATE_ID = "YOUR_EMAILJS_TEMPLATE_ID";
 
 async function initApp() {
   try {
