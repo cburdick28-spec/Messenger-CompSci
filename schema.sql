@@ -55,13 +55,37 @@ CREATE TABLE IF NOT EXISTS broadcasts (
   created_at timestamptz DEFAULT now()
 );
 
+-- Users / auth table
+CREATE TABLE IF NOT EXISTS users (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  name text NOT NULL,
+  email text NOT NULL,
+  role text NOT NULL CHECK (role IN ('student', 'teacher')),
+  status text DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  approval_token text DEFAULT gen_random_uuid()::text,
+  created_at timestamptz DEFAULT now(),
+  approved_at timestamptz
+);
+
 -- ===== ROW LEVEL SECURITY =====
 
+ALTER TABLE users            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE survey_responses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE problem_reports  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE house_points     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE broadcasts       ENABLE ROW LEVEL SECURITY;
+
+-- Users table policies
+DO $$ BEGIN
+  CREATE POLICY "Public insert users" ON users FOR INSERT WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Public read users"   ON users FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Public update users" ON users FOR UPDATE USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Students can submit (insert) anonymously
 CREATE POLICY IF NOT EXISTS "Public insert messages"         ON messages        FOR INSERT WITH CHECK (true);

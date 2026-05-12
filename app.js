@@ -140,6 +140,9 @@ const TRIVIA_SECONDS = 30;
 
 /* ===== STATE ===== */
 
+const ADMIN_EMAIL = "cburdick28@brewstermadrid.com";
+const APP_URL     = "https://messenger-comp-sci.vercel.app";
+
 const state = {
   screen: "splash",
   history: [],
@@ -148,6 +151,11 @@ const state = {
   pinError: false,
   emergencyOpen: false,
   emergencySent: false,
+
+  /* Auth */
+  user: null,          // { id, name, email, role, status, approvalToken }
+  loginStep: "role",   // "role" | "teacher-form"
+  approvalProcessed: false,
 
   trivia: {
     current: 0,
@@ -299,10 +307,8 @@ function renderBottomNav() { return ""; }
 
 /* --- SPLASH --- */
 function screenSplash() {
-  setTimeout(() => {
-    state.screen = "home";
-    renderApp("fade-in");
-  }, 2600);
+  // initApp() handles routing after splash — nothing to do here
+  setTimeout(() => {}, 0);
 
   return `
   <div class="app-screen fade-in splash">
@@ -827,20 +833,290 @@ function renderEmergencyOverlay() {
   </div>`;
 }
 
+/* ===== AUTH SCREENS ===== */
+
+function screenLogin() {
+  if (state.loginStep === "teacher-form") return screenTeacherForm();
+  return `
+  <div class="login-screen">
+    <div class="login-logo">${BOBCAT_SVG_WHITE}</div>
+    <div class="login-school-tag">Brewster Academy · Est. 1820</div>
+    <div class="login-app-title">Brewster App</div>
+    <div class="login-welcome">Who are you joining as today?</div>
+    <div class="login-role-row">
+      <button class="login-role-btn teacher-btn" onclick="loginAsStudent('teacher-form')">
+        <div class="login-role-icon">🎓</div>
+        <div class="login-role-name">Teacher</div>
+        <div class="login-role-desc">Staff & faculty access with admin features</div>
+      </button>
+      <button class="login-role-btn student-btn" onclick="loginAsStudent('student')">
+        <div class="login-role-icon">📚</div>
+        <div class="login-role-name">Student</div>
+        <div class="login-role-desc">Jump right in — no sign-up needed</div>
+      </button>
+    </div>
+    <div class="login-footer">Go Bobcats! 🐾 · Wolfeboro, New Hampshire</div>
+  </div>`;
+}
+
+function screenTeacherForm() {
+  return `
+  <div class="login-form-wrap">
+    <div class="login-form-card">
+      <button class="login-form-back" onclick="state.loginStep='role';renderApp()">
+        ${ICON.back} Back
+      </button>
+      <div class="login-form-icon">🎓</div>
+      <div class="login-form-title">Teacher Sign In</div>
+      <div class="login-form-sub">Enter your details and we'll send an approval request to the administrator. You'll get access once approved.</div>
+      <div class="login-form-group">
+        <label class="login-form-label">Full Name</label>
+        <input class="login-form-input" id="teacher-name" type="text" placeholder="e.g. Ms. Johnson" autocomplete="name"/>
+      </div>
+      <div class="login-form-group">
+        <label class="login-form-label">School Email</label>
+        <input class="login-form-input" id="teacher-email" type="email" placeholder="you@brewstermadrid.com" autocomplete="email"/>
+      </div>
+      <button class="login-submit-btn teacher-submit" onclick="requestTeacherAccess()">
+        Request Teacher Access →
+      </button>
+      <div class="login-privacy">🔒 An approval email will be sent to the administrator. You'll be notified once access is granted.</div>
+    </div>
+  </div>`;
+}
+
+function screenPending() {
+  return `
+  <div class="pending-screen">
+    <div class="pending-icon">⏳</div>
+    <div class="pending-title">Awaiting Approval</div>
+    <div class="pending-sub">Your teacher access request has been sent to the administrator. You'll be approved shortly — check back here once you receive confirmation.</div>
+    <div class="pending-email-chip">📧 Approval request sent to ${ADMIN_EMAIL}</div>
+    <button class="pending-check-btn" onclick="checkApprovalStatus()">🔄 Check Approval Status</button>
+    <button class="pending-logout-btn" onclick="logout()">Sign out</button>
+  </div>`;
+}
+
+function screenApprovalSuccess() {
+  return `
+  <div class="approval-screen">
+    <div class="approval-icon">✅</div>
+    <div class="approval-title">Teacher Approved!</div>
+    <div class="approval-sub">The teacher account has been successfully approved. They now have full teacher access to the Brewster App.</div>
+    <button class="approval-done-btn" onclick="state.approvalProcessed=false;navigate('home')">Go to Dashboard</button>
+  </div>`;
+}
+
+/* ===== PROFILE SCREEN ===== */
+
+function screenProfile() {
+  const user = state.user;
+  if (!user) { navigate("login"); return ""; }
+
+  const isTeacher = user.role === "teacher";
+  const avatar    = isTeacher ? "👩‍🏫" : "🎓";
+  const badge     = isTeacher ? "🎓 Teacher · Verified" : "📚 Student";
+
+  const activityCard = isTeacher ? `
+    <div class="profile-stat-card">
+      <div class="profile-stat-title">📡 Admin Activity</div>
+      <div class="profile-stat-row">
+        <span class="profile-stat-label">Broadcasts sent</span>
+        <span class="profile-stat-val">${state.broadcasts.length}</span>
+      </div>
+      <div class="profile-stat-row">
+        <span class="profile-stat-label">Emergency alerts</span>
+        <span class="profile-stat-val">${state.emergencySent ? 1 : 0}</span>
+      </div>
+      <div class="profile-stat-row">
+        <span class="profile-stat-label">Panel access</span>
+        <span class="profile-stat-val" style="color:var(--green)">Active</span>
+      </div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-title">⚙️ Quick Access</div>
+      <div class="profile-stat-row" style="cursor:pointer" onclick="navigate('emergency-panel')">
+        <span class="profile-stat-label">Emergency Panel</span>
+        <span class="profile-stat-val">→</span>
+      </div>
+      <div class="profile-stat-row" style="cursor:pointer" onclick="navigate('house')">
+        <span class="profile-stat-label">Update House Points</span>
+        <span class="profile-stat-val">→</span>
+      </div>
+      <div class="profile-stat-row" style="cursor:pointer" onclick="navigate('surveys')">
+        <span class="profile-stat-label">View Survey Results</span>
+        <span class="profile-stat-val">→</span>
+      </div>
+    </div>` : `
+    <div class="profile-stat-card">
+      <div class="profile-stat-title">📊 My Activity</div>
+      <div class="profile-stat-row">
+        <span class="profile-stat-label">Surveys completed</span>
+        <span class="profile-stat-val">${(state.survey1.submitted ? 1 : 0) + (state.survey2.submitted ? 1 : 0)}</span>
+      </div>
+      <div class="profile-stat-row">
+        <span class="profile-stat-label">Messages to Ms. Ellie</span>
+        <span class="profile-stat-val">${state.messageSent ? 1 : 0}</span>
+      </div>
+      <div class="profile-stat-row">
+        <span class="profile-stat-label">Problem reports filed</span>
+        <span class="profile-stat-val">${state.reportSent ? 1 : 0}</span>
+      </div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-title">🏆 House Standings</div>
+      ${HOUSES.slice(0,3).map((h,i) => `
+        <div class="profile-stat-row">
+          <span class="profile-stat-label">${i===0?"👑":i+1+"."} ${h.icon} ${h.name} House</span>
+          <span class="profile-stat-val">${h.pts} pts</span>
+        </div>`).join("")}
+    </div>`;
+
+  return `
+  <div class="app-screen slide-in">
+    ${renderTopBar("My Profile")}
+    <div class="profile-screen">
+      <div class="profile-hero">
+        <div class="profile-avatar">${avatar}</div>
+        <div class="profile-info">
+          <div class="profile-name">${user.name || "Brewster Student"}</div>
+          <div class="profile-role-badge">${badge}</div>
+          <div class="profile-school">Brewster Academy · Wolfeboro, NH</div>
+        </div>
+      </div>
+      ${activityCard}
+      <div class="profile-logout-card">
+        <div class="profile-logout-text">Signed in as <strong>${user.name || "Student"}</strong> · ${user.role}</div>
+        <button class="profile-logout-btn" onclick="logout()">Sign Out</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ===== AUTH LOGIC ===== */
+
+function loginAsStudent(type) {
+  if (type === "teacher-form") {
+    state.loginStep = "teacher-form";
+    renderApp();
+    return;
+  }
+  // Students log in instantly — no info needed
+  state.user = { id: "student-" + Date.now(), name: "Student", email: "", role: "student", status: "approved" };
+  localStorage.setItem("brewster_user", JSON.stringify(state.user));
+  state.screen = "home";
+  renderApp("fade-in");
+}
+
+async function requestTeacherAccess() {
+  const nameEl  = document.getElementById("teacher-name");
+  const emailEl = document.getElementById("teacher-email");
+  const name    = nameEl  ? nameEl.value.trim()  : "";
+  const email   = emailEl ? emailEl.value.trim() : "";
+
+  if (!name)  { nameEl  && (nameEl.style.borderColor  = "var(--red)"); return; }
+  if (!email) { emailEl && (emailEl.style.borderColor = "var(--red)"); return; }
+
+  // Generate approval token and store in Supabase
+  const token = crypto.randomUUID();
+  const user  = { name, email, role: "teacher", status: "pending", approval_token: token };
+
+  if (sb) {
+    const { data } = await sb.from("users").insert(user).select().single();
+    if (data) user.id = data.id;
+  }
+
+  // Save pending session locally
+  state.user = { id: user.id || token, name, email, role: "teacher", status: "pending", approvalToken: token };
+  localStorage.setItem("brewster_user", JSON.stringify(state.user));
+
+  // Build approval URL and open mailto email to admin
+  const approvalUrl = `${APP_URL}?approve=${token}`;
+  const subject     = encodeURIComponent(`Teacher Access Request: ${name}`);
+  const body        = encodeURIComponent(
+    `Hello,\n\n${name} (${email}) has requested teacher access to the Brewster App.\n\nClick the link below to APPROVE their account:\n\n${approvalUrl}\n\nIf you did not expect this request, you can ignore this email.\n\n— Brewster App`
+  );
+  window.open(`mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`, "_self");
+
+  state.screen = "pending";
+  renderApp();
+}
+
+async function checkApprovalStatus() {
+  if (!sb || !state.user?.approvalToken) return;
+  const { data } = await sb.from("users")
+    .select("status")
+    .eq("approval_token", state.user.approvalToken)
+    .single();
+  if (data?.status === "approved") {
+    state.user.status = "approved";
+    localStorage.setItem("brewster_user", JSON.stringify(state.user));
+    state.isAdmin = true;
+    state.screen  = "home";
+    renderApp("fade-in");
+  } else {
+    alert("Still pending — the administrator hasn't approved yet. Try again shortly.");
+  }
+}
+
+async function handleApprovalFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get("approve");
+  if (!token) return false;
+
+  // Update the user's status in Supabase
+  if (sb) {
+    await sb.from("users")
+      .update({ status: "approved" })
+      .eq("approval_token", token);
+  }
+
+  // Clear the URL parameter without reload
+  window.history.replaceState({}, document.title, window.location.pathname);
+  state.approvalProcessed = true;
+  return true;
+}
+
+function logout() {
+  localStorage.removeItem("brewster_user");
+  state.user    = null;
+  state.isAdmin = false;
+  state.screen  = "login";
+  state.loginStep = "role";
+  renderApp();
+}
+
+function loadUserFromStorage() {
+  try {
+    const saved = localStorage.getItem("brewster_user");
+    if (saved) {
+      state.user = JSON.parse(saved);
+      if (state.user.role === "teacher" && state.user.status === "approved") {
+        state.isAdmin = true;
+      }
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
 /* ===== RENDER ENGINE ===== */
 
 function getScreenHTML(anim = "slide-in") {
   switch (state.screen) {
-    case "splash":          return screenSplash();
-    case "home":            return screenHome();
-    case "trivia":          return screenTrivia();
-    case "house":           return screenHouse();
-    case "surveys":         return screenSurveys();
-    case "message":         return screenMessage();
-    case "report":          return screenReport();
-    case "emergency-panel": return screenEmergencyPanel();
-    case "profile":         return screenProfilePlaceholder();
-    default:                return screenHome();
+    case "splash":           return screenSplash();
+    case "login":            return screenLogin();
+    case "pending":          return screenPending();
+    case "approval-success": return screenApprovalSuccess();
+    case "home":             return screenHome();
+    case "trivia":           return screenTrivia();
+    case "house":            return screenHouse();
+    case "surveys":          return screenSurveys();
+    case "message":          return screenMessage();
+    case "report":           return screenReport();
+    case "emergency-panel":  return screenEmergencyPanel();
+    case "profile":          return screenProfile();
+    default:                 return screenHome();
   }
 }
 
@@ -858,9 +1134,11 @@ function screenProfilePlaceholder() {
   </div>`;
 }
 
+const NO_SIDEBAR_SCREENS = new Set(["splash","login","pending","approval-success"]);
+
 function renderApp(anim = "slide-in") {
   const root = document.getElementById("root");
-  if (state.screen === "splash") {
+  if (NO_SIDEBAR_SCREENS.has(state.screen)) {
     root.innerHTML = getScreenHTML(anim) + renderEmergencyOverlay();
   } else {
     root.innerHTML = `
@@ -1179,6 +1457,27 @@ async function initApp() {
   } catch (e) {
     console.warn("Supabase init failed, running in offline mode:", e);
   }
+
+  // Check if this is an admin approval link (?approve=TOKEN)
+  const wasApproval = await handleApprovalFromURL();
+  if (wasApproval) {
+    state.screen = "approval-success";
+    renderApp("fade-in");
+    return;
+  }
+
+  // Restore existing session from localStorage
+  const hasSession = loadUserFromStorage();
+  if (hasSession) {
+    if (state.user.status === "pending") {
+      state.screen = "pending";
+    } else {
+      state.screen = "home";
+    }
+  } else {
+    state.screen = "login";
+  }
+
   renderApp("fade-in");
 }
 
