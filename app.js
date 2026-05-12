@@ -267,7 +267,7 @@ function renderSidebar() {
   return `
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <div class="sidebar-bobcat"><img src="bobcat.png" alt="Brewster Bobcat" style="width:72px;height:72px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4))"/></div>
+      <div class="sidebar-bobcat"><img src="bobcat.png" alt="Brewster Bobcat" style="width:72px;height:72px;object-fit:contain;background:white;border-radius:50%;padding:4px"/></div>
       <div class="sidebar-title">Brewster App</div>
       <div class="sidebar-sub">Brewster Academy</div>
     </div>
@@ -313,7 +313,7 @@ function screenSplash() {
 
   return `
   <div class="app-screen fade-in splash">
-    <div class="splash-bobcat"><img src="bobcat.png" alt="Brewster Bobcat" style="width:160px;height:160px;object-fit:contain;filter:drop-shadow(0 4px 24px rgba(0,0,0,0.35))"/></div>
+    <div class="splash-bobcat"><img src="bobcat.png" alt="Brewster Bobcat" style="width:160px;height:160px;object-fit:contain;background:white;border-radius:50%;padding:6px"/></div>
     <div class="splash-school-name">Brewster Academy · Est. 1820</div>
     <div class="splash-app-name">Brewster App</div>
     <div class="splash-tagline">Go Bobcats! 🐾</div>
@@ -852,7 +852,7 @@ function screenLogin() {
   if (state.loginStep === "student-form") return screenStudentForm();
   return `
   <div class="login-screen">
-    <div class="login-logo"><img src="bobcat.png" alt="Brewster Bobcat" style="width:120px;height:120px;object-fit:contain"/></div>
+    <div class="login-logo"><img src="bobcat.png" alt="Brewster Bobcat" style="width:120px;height:120px;object-fit:contain;background:white;border-radius:50%;padding:5px"/></div>
     <div class="login-school-tag">Brewster Academy · Est. 1820</div>
     <div class="login-app-title">Brewster App</div>
     <div class="login-welcome">Who are you joining as today?</div>
@@ -1105,22 +1105,26 @@ async function requestTeacherAccess() {
   const token       = crypto.randomUUID();
   const approvalUrl = `${APP_URL}?approve=${token}`;
 
-  // Store pending teacher in Supabase
-  if (sb) {
-    await sb.from("users").insert({ name, email, role: "teacher", status: "pending", approval_token: token });
+  // Store pending teacher in Supabase (non-blocking — may fail if table not yet created)
+  try {
+    if (sb) {
+      await sb.from("users").insert({ name, email, role: "teacher", status: "pending", approval_token: token });
+    }
+  } catch(e) {
+    console.warn("Supabase users insert failed:", e);
   }
 
-  // Save session locally
+  // Save session locally so teacher sees pending screen on return
   state.user = { id: token, name, email, role: "teacher", status: "pending", approvalToken: token };
   localStorage.setItem("brewster_user", JSON.stringify(state.user));
 
-  // Send approval email automatically via EmailJS
+  // Try EmailJS first
   let emailSent = false;
   try {
     if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_EMAILJS_PUBLIC_KEY") {
       emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
       await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        to_email:     ADMIN_EMAIL,
+        to_email:      ADMIN_EMAIL,
         teacher_name:  name,
         teacher_email: email,
         approval_url:  approvalUrl,
@@ -1131,13 +1135,14 @@ async function requestTeacherAccess() {
     console.warn("EmailJS send failed:", e);
   }
 
-  // Fallback: open user's email client if EmailJS not configured
+  // Fallback: open mailto in a new tab so the app page doesn't navigate away
   if (!emailSent) {
     const subject = encodeURIComponent(`Teacher Access Request: ${name}`);
     const body    = encodeURIComponent(`Hello,\n\n${name} (${email}) has requested teacher access to the Brewster App.\n\nClick to APPROVE:\n${approvalUrl}\n\n— Brewster App`);
-    window.location.href = `mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`;
+    window.open(`mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`, "_blank");
   }
 
+  // Always navigate to pending — never leave the app
   state.screen = "pending";
   renderApp();
 }
