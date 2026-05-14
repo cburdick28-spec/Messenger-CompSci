@@ -141,7 +141,6 @@ const TRIVIA_SECONDS = 30;
 /* ===== STATE ===== */
 
 const ADMIN_EMAIL = "cburdick28@brewstermadrid.com";
-const APP_URL     = "https://messenger-comp-sci.vercel.app";
 
 const state = {
   screen: "splash",
@@ -297,6 +296,7 @@ function renderTopBar(title = "", backBtn = false) {
   <div class="top-bar">
     <div class="top-bar-left">${left}</div>
     <div class="top-bar-right">
+      ${state.user ? `<button class="top-logout-btn" onclick="logout()">Log Out</button>` : ""}
       <button class="top-emergency-btn" onclick="openEmergency()">🚨 EMERGENCY</button>
     </div>
   </div>`;
@@ -1093,7 +1093,7 @@ async function requestTeacherAccess() {
   const nameEl  = document.getElementById("teacher-name");
   const emailEl = document.getElementById("teacher-email");
   const name    = nameEl?.value.trim()  || "";
-  const email   = emailEl?.value.trim() || "";
+  const email   = emailEl?.value.trim().toLowerCase() || "";
 
   state.loginError = "";
   if (!name)  { state.loginError = "Please enter your full name.";  renderApp(); return; }
@@ -1102,8 +1102,61 @@ async function requestTeacherAccess() {
   const btn = document.getElementById("teacher-submit-btn");
   if (btn) { btn.textContent = "Sending request…"; btn.disabled = true; }
 
-  const token       = crypto.randomUUID();
-  const approvalUrl = `${APP_URL}?approve=${token}`;
+  // If this teacher already exists, sign in (approved) or return to pending (pending).
+  if (sb) {
+    const { data: existingUser, error: existingUserErr } = await sb
+      .from("users")
+      .select("id,name,email,role,status,approval_token")
+      .eq("role", "teacher")
+      .eq("email", email)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingUserErr) {
+      state.loginError = `Database error: ${existingUserErr.message}`;
+      renderApp();
+      return;
+    }
+
+    if (existingUser) {
+      if (existingUser.status === "approved") {
+        state.user = {
+          id: existingUser.id,
+          name: existingUser.name || name,
+          email: existingUser.email || email,
+          role: "teacher",
+          status: "approved",
+          approvalToken: existingUser.approval_token || null,
+        };
+        state.isAdmin = true;
+        localStorage.setItem("brewster_user", JSON.stringify(state.user));
+        state.screen = "home";
+        renderApp("fade-in");
+        return;
+      }
+      if (existingUser.status === "pending") {
+        state.user = {
+          id: existingUser.id,
+          name: existingUser.name || name,
+          email: existingUser.email || email,
+          role: "teacher",
+          status: "pending",
+          approvalToken: existingUser.approval_token,
+        };
+        localStorage.setItem("brewster_user", JSON.stringify(state.user));
+        state.screen = "pending";
+        renderApp();
+        return;
+      }
+      state.loginError = "Your teacher access request was rejected. Please contact the administrator.";
+      renderApp();
+      return;
+    }
+  }
+
+  const token = crypto.randomUUID();
+  const approvalUrl = `${window.location.origin}${window.location.pathname}?approve=${token}`;
 
   // Store pending teacher in Supabase
   if (sb) {
@@ -1190,6 +1243,7 @@ function logout() {
   localStorage.removeItem("brewster_user");
   state.user    = null;
   state.isAdmin = false;
+  state.loginError = "";
   state.screen  = "login";
   state.loginStep = "role";
   renderApp();

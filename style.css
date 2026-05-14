@@ -193,6 +193,16 @@ ul { list-style: none; }
 .top-bar-greeting { font-size: 18px; font-weight: 800; color: var(--text); }
 .top-bar-date { font-size: 12px; color: var(--text-muted); font-weight: 500; }
 .top-bar-right { display: flex; align-items: center; gap: 12px; }
+.top-logout-btn {
+  background: rgba(0,34,102,0.08);
+  color: var(--navy);
+  border-radius: var(--r-full);
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 800;
+  transition: background 0.15s;
+}
+.top-logout-btn:hover { background: rgba(0,34,102,0.14); }
 .top-bar-back-btn {
   display: flex;
   align-items: center;
