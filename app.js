@@ -141,6 +141,11 @@ const TRIVIA_SECONDS = 30;
 /* ===== STATE ===== */
 
 const ADMIN_EMAIL = "cburdick28@brewstermadrid.com";
+const ADMIN_EMAIL_ALLOWLIST = new Set([
+  "cburdick28@brewstermadrid.com",
+  "lbondi28@brewstermadrid.com",
+  "arosario28@brewstermadrid.com",
+].map(email => email.toLowerCase()));
 
 const state = {
   screen: "splash",
@@ -210,6 +215,26 @@ function formatCountdown(ms) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function normalizeEmail(email) {
+  return (email || "").trim().toLowerCase();
+}
+
+function isAllowlistedAdmin(email) {
+  return ADMIN_EMAIL_ALLOWLIST.has(normalizeEmail(email));
+}
+
+function isApprovedTeacher(user) {
+  return user?.role === "teacher" && user?.status === "approved";
+}
+
+function hasAdminAccess(user = state.user) {
+  return isAllowlistedAdmin(user?.email) || isApprovedTeacher(user) || state.isAdmin;
+}
+
+function syncAdminFromUser(user) {
+  state.isAdmin = isAllowlistedAdmin(user?.email) || isApprovedTeacher(user);
+}
+
 function getDayGreeting() {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -254,7 +279,7 @@ const ICON = {
 /* ===== COMMON COMPONENTS ===== */
 
 function renderSidebar() {
-  const isStudent = state.user?.role === "student";
+  const isStudent = state.user?.role === "student" && !hasAdminAccess();
   const items = [
     { id: "home",            label: "Dashboard",        icon: ICON.home },
     { id: "house",           label: "House Standings",  icon: ICON.events },
@@ -326,6 +351,7 @@ function screenSplash() {
 
 /* --- HOME DASHBOARD --- */
 function screenHome() {
+  const adminAccess = hasAdminAccess();
   const maxPts = Math.max(...HOUSES.map(h => h.pts));
   const houseRows = HOUSES.map(h => `
     <div class="house-mini-row">
@@ -338,12 +364,12 @@ function screenHome() {
 
   const adminCard = `
     <div class="admin-card dash-third" onclick="navigate('emergency-panel')">
-      <div class="admin-icon">${state.isAdmin ? "🔐" : "🛡️"}</div>
+      <div class="admin-icon">${adminAccess ? "🔐" : "🛡️"}</div>
       <div class="admin-text">
-        <div class="admin-title">${state.isAdmin ? "Emergency Panel" : "Staff Emergency Panel"}</div>
-        <div class="admin-sub">${state.isAdmin ? "Broadcast alerts to all students" : "Authorized personnel only"}</div>
+        <div class="admin-title">${adminAccess ? "Emergency Panel" : "Staff Emergency Panel"}</div>
+        <div class="admin-sub">${adminAccess ? "Broadcast alerts to all students" : "Authorized personnel only"}</div>
       </div>
-      <div class="admin-badge">${state.isAdmin ? "STAFF" : "SECURE"}</div>
+      <div class="admin-badge">${adminAccess ? "STAFF" : "SECURE"}</div>
     </div>`;
 
   return `
@@ -733,7 +759,7 @@ function screenReport() {
 
 /* --- EMERGENCY PANEL (PIN GATE + ADMIN VIEW) --- */
 function screenEmergencyPanel() {
-  if (state.user?.role === "student") {
+  if (state.user?.role === "student" && !hasAdminAccess()) {
     return `
     <div class="app-screen slide-in">
       ${renderTopBar("Emergency Panel", true)}
@@ -744,7 +770,7 @@ function screenEmergencyPanel() {
       </div>
     </div>`;
   }
-  if (!state.isAdmin) return screenPinEntry();
+  if (!hasAdminAccess()) return screenPinEntry();
   return screenAdminPanel();
 }
 
@@ -1058,6 +1084,7 @@ async function loginStudent() {
   if (!sb) {
     // Offline fallback
     state.user = { id: "student-" + Date.now(), name: name || email.split("@")[0], email, role: "student", status: "approved" };
+    syncAdminFromUser(state.user);
     localStorage.setItem("brewster_user", JSON.stringify(state.user));
     state.screen = "home"; renderApp("fade-in"); return;
   }
@@ -1084,6 +1111,7 @@ async function loginStudent() {
     role:   "student",
     status: "approved",
   };
+  syncAdminFromUser(state.user);
   localStorage.setItem("brewster_user", JSON.stringify(state.user));
   state.screen = "home";
   renderApp("fade-in");
@@ -1129,7 +1157,7 @@ async function requestTeacherAccess() {
           status: "approved",
           approvalToken: existingUser.approval_token || null,
         };
-        state.isAdmin = true;
+        syncAdminFromUser(state.user);
         localStorage.setItem("brewster_user", JSON.stringify(state.user));
         state.screen = "home";
         renderApp("fade-in");
@@ -1144,6 +1172,7 @@ async function requestTeacherAccess() {
           status: "pending",
           approvalToken: existingUser.approval_token,
         };
+        syncAdminFromUser(state.user);
         localStorage.setItem("brewster_user", JSON.stringify(state.user));
         state.screen = "pending";
         renderApp();
@@ -1173,6 +1202,7 @@ async function requestTeacherAccess() {
 
   // Save session locally so teacher sees pending screen on return
   state.user = { id: token, name, email, role: "teacher", status: "pending", approvalToken: token };
+  syncAdminFromUser(state.user);
   localStorage.setItem("brewster_user", JSON.stringify(state.user));
 
   // Try EmailJS first
@@ -1213,7 +1243,7 @@ async function checkApprovalStatus() {
   if (data?.status === "approved") {
     state.user.status = "approved";
     localStorage.setItem("brewster_user", JSON.stringify(state.user));
-    state.isAdmin = true;
+    syncAdminFromUser(state.user);
     state.screen  = "home";
     renderApp("fade-in");
   } else {
@@ -1254,9 +1284,7 @@ function loadUserFromStorage() {
     const saved = localStorage.getItem("brewster_user");
     if (saved) {
       state.user = JSON.parse(saved);
-      if (state.user.role === "teacher" && state.user.status === "approved") {
-        state.isAdmin = true;
-      }
+      syncAdminFromUser(state.user);
       return true;
     }
   } catch(e) {}
