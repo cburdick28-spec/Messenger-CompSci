@@ -176,6 +176,10 @@ const state = {
 
   survey1: { rating: 0, submitted: false },
   survey2: { selected: null, submitted: false },
+  surveyResponses: { dining: [], dorm: [] },
+  surveyResponsesLoading: false,
+  surveyResponsesLoaded: false,
+  surveyResponsesError: "",
 
   messageSent: false,
   reportSent: false,
@@ -233,6 +237,56 @@ function hasAdminAccess(user = state.user) {
 
 function syncAdminFromUser(user) {
   state.isAdmin = isAllowlistedAdmin(user?.email) || isApprovedTeacher(user);
+}
+
+function canViewSurveyData(user = state.user) {
+  return isApprovedTeacher(user);
+}
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
+function getDiningSummary(responses) {
+  const counts = [0, 0, 0, 0, 0];
+  let total = 0;
+  let sum = 0;
+  const comments = [];
+  responses.forEach((entry) => {
+    const rating = Number(entry.response?.rating);
+    if (Number.isFinite(rating) && rating >= 1 && rating <= 5) {
+      total += 1;
+      sum += rating;
+      counts[rating - 1] += 1;
+    }
+    const comment = entry.response?.comment?.trim();
+    if (comment) comments.push(comment);
+  });
+  return {
+    total,
+    avg: total ? (sum / total).toFixed(1) : "—",
+    counts,
+    comments,
+  };
+}
+
+function getDormSummary(responses) {
+  const counts = [0, 0, 0, 0];
+  let total = 0;
+  responses.forEach((entry) => {
+    const selected = Number(entry.response?.selected);
+    if (Number.isFinite(selected) && selected >= 0 && selected <= 3) {
+      total += 1;
+      counts[selected] += 1;
+    }
+  });
+  return { total, counts };
 }
 
 function getDayGreeting() {
@@ -578,6 +632,57 @@ function screenHouse() {
 
 /* --- SURVEYS --- */
 function screenSurveys() {
+  const showDataPanel = canViewSurveyData();
+  const diningSummary = showDataPanel ? getDiningSummary(state.surveyResponses.dining || []) : null;
+  const dormSummary = showDataPanel ? getDormSummary(state.surveyResponses.dorm || []) : null;
+  const diningCounts = showDataPanel
+    ? [5,4,3,2,1].map((rating) => `
+        <div class="survey-data-row">
+          <span>${rating}★</span>
+          <span>${diningSummary.counts[rating - 1]}</span>
+        </div>`).join("")
+    : "";
+  const diningComments = showDataPanel
+    ? diningSummary.comments.slice(0, 3).map(comment => `
+        <div class="survey-data-comment">${escapeHTML(comment)}</div>
+      `).join("")
+    : "";
+  const dormOptions = ["Excellent — love it here!","Good — minor improvements needed","Fair — several issues","Poor — needs major changes"];
+  const dormCounts = showDataPanel
+    ? dormOptions.map((opt, i) => `
+        <div class="survey-data-row">
+          <span>${opt}</span>
+          <span>${dormSummary.counts[i]}</span>
+        </div>`).join("")
+    : "";
+  const surveyDataPanel = showDataPanel ? `
+      <div class="survey-data-panel">
+        <div class="survey-data-header">
+          <div class="survey-data-title">Survey Responses (Staff)</div>
+          <button class="survey-refresh-btn" onclick="loadSurveyResponses(true)">Refresh</button>
+        </div>
+        ${state.surveyResponsesLoading ? `
+          <div class="survey-data-status">Loading responses…</div>
+        ` : state.surveyResponsesError ? `
+          <div class="survey-data-error">${escapeHTML(state.surveyResponsesError)}</div>
+        ` : `
+          <div class="survey-data-grid">
+            <div class="survey-data-card">
+              <div class="survey-data-card-title">Dining Feedback</div>
+              <div class="survey-data-metric">Average rating: <strong>${diningSummary.avg}</strong> · ${diningSummary.total} responses</div>
+              <div class="survey-data-rows">${diningCounts}</div>
+              <div class="survey-data-subtitle">Recent comments</div>
+              ${diningComments || `<div class="survey-data-empty">No comments yet.</div>`}
+            </div>
+            <div class="survey-data-card">
+              <div class="survey-data-card-title">Dorm Life Survey</div>
+              <div class="survey-data-metric">${dormSummary.total} responses</div>
+              <div class="survey-data-rows">${dormCounts}</div>
+            </div>
+          </div>
+        `}
+      </div>
+    ` : "";
   const survey1Body = state.survey1.submitted
     ? `<div class="survey-submitted">
         <div class="survey-submitted-icon">✅</div>
@@ -617,6 +722,7 @@ function screenSurveys() {
   <div class="app-screen slide-in">
     ${renderTopBar("Active Surveys", true)}
     <div class="surveys-screen">
+      ${surveyDataPanel}
       <div class="survey-card">
         <div class="survey-card-header">
           <div class="survey-icon">🍽️</div>
@@ -1274,6 +1380,10 @@ function logout() {
   state.user    = null;
   state.isAdmin = false;
   state.loginError = "";
+  state.surveyResponses = { dining: [], dorm: [] };
+  state.surveyResponsesLoading = false;
+  state.surveyResponsesLoaded = false;
+  state.surveyResponsesError = "";
   state.screen  = "login";
   state.loginStep = "role";
   renderApp();
@@ -1355,6 +1465,10 @@ function bindEvents() {
   /* Dashboard countdown timer */
   if (state.screen === "home") {
     startCountdownTimer();
+  }
+
+  if (state.screen === "surveys" && canViewSurveyData() && !state.surveyResponsesLoaded) {
+    loadSurveyResponses();
   }
 }
 
@@ -1452,6 +1566,9 @@ async function submitSurvey1() {
     });
   }
   state.survey1.submitted = true;
+  if (canViewSurveyData()) {
+    loadSurveyResponses(true);
+  }
   renderApp();
 }
 
@@ -1470,6 +1587,44 @@ async function submitSurvey2() {
     });
   }
   state.survey2.submitted = true;
+  if (canViewSurveyData()) {
+    loadSurveyResponses(true);
+  }
+  renderApp();
+}
+
+async function loadSurveyResponses(force = false) {
+  if (!sb) {
+    state.surveyResponsesError = "Survey data is unavailable offline.";
+    state.surveyResponsesLoaded = false;
+    state.surveyResponsesLoading = false;
+    renderApp();
+    return;
+  }
+  if (state.surveyResponsesLoading) return;
+  if (!force && state.surveyResponsesLoaded) return;
+  state.surveyResponsesLoading = true;
+  state.surveyResponsesError = "";
+  renderApp();
+  const { data, error } = await sb
+    .from("survey_responses")
+    .select("survey_id,response,created_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) {
+    state.surveyResponsesError = error.message;
+    state.surveyResponsesLoading = false;
+    renderApp();
+    return;
+  }
+  const grouped = { dining: [], dorm: [] };
+  (data || []).forEach((row) => {
+    if (row.survey_id === "dining") grouped.dining.push(row);
+    if (row.survey_id === "dorm") grouped.dorm.push(row);
+  });
+  state.surveyResponses = grouped;
+  state.surveyResponsesLoading = false;
+  state.surveyResponsesLoaded = true;
   renderApp();
 }
 
