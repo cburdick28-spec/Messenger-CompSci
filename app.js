@@ -179,6 +179,7 @@ const state = {
   surveyResponses: { dining: [], dorm: [] },
   surveyResponsesLoading: false,
   surveyResponsesLoaded: false,
+  surveyResponsesAttempted: false,
   surveyResponsesError: "",
   surveyResultsModal: { open: false, surveyId: null },
   surveyResultsFilter: { from: "", to: "" },
@@ -1677,6 +1678,7 @@ function logout() {
   state.surveyResponses = { dining: [], dorm: [] };
   state.surveyResponsesLoading = false;
   state.surveyResponsesLoaded = false;
+  state.surveyResponsesAttempted = false;
   state.surveyResponsesError = "";
   state.surveyResultsModal = { open: false, surveyId: null };
   state.surveyResultsFilter = { from: "", to: "" };
@@ -1765,7 +1767,7 @@ function bindEvents() {
 
   if (state.screen === "surveys" && canViewSurveyData()) {
     startSurveyRealtime();
-    if (!state.surveyResponsesLoaded) {
+    if (!state.surveyResponsesLoaded && !state.surveyResponsesAttempted) {
       loadSurveyResponses();
     }
   } else {
@@ -1897,14 +1899,16 @@ async function submitSurvey2() {
 async function loadSurveyResponses(force = false) {
   if (!sb) {
     state.surveyResponsesError = "Survey data is unavailable offline.";
-    state.surveyResponsesLoaded = true;
+    state.surveyResponsesLoaded = false;
+    state.surveyResponsesAttempted = true;
     state.surveyResponsesLoading = false;
     renderApp();
     return;
   }
   if (state.surveyResponsesLoading) return;
-  if (!force && state.surveyResponsesLoaded) return;
+  if (!force && (state.surveyResponsesLoaded || state.surveyResponsesAttempted)) return;
   state.surveyResponsesLoading = true;
+  state.surveyResponsesAttempted = true;
   state.surveyResponsesError = "";
   renderApp();
   const { data, error } = await sb
@@ -1915,7 +1919,7 @@ async function loadSurveyResponses(force = false) {
   if (error) {
     state.surveyResponsesError = error.message;
     state.surveyResponsesLoading = false;
-    state.surveyResponsesLoaded = true;
+    state.surveyResponsesLoaded = false;
     renderApp();
     return;
   }
