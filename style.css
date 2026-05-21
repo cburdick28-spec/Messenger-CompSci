@@ -23,6 +23,8 @@
   --gold:         #C8991A;
   --teal:         #0E7490;
   --green:        #15803D;
+  --chart-blue:   #4f7ff1;
+  --chart-gray:   #94a3b8;
 
   --bg:           var(--gray-50);
   --text:         var(--gray-900);
@@ -1857,8 +1859,8 @@ ul { list-style: none; }
 }
 .results-legend-dot.results-legend-0 { background: var(--navy); }
 .results-legend-dot.results-legend-1 { background: var(--red); }
-.results-legend-dot.results-legend-2 { background: #4f7ff1; }
-.results-legend-dot.results-legend-3 { background: #94a3b8; }
+.results-legend-dot.results-legend-2 { background: var(--chart-blue); }
+.results-legend-dot.results-legend-3 { background: var(--chart-gray); }
 .results-legend-name { color: var(--text); }
 .results-legend-metric { color: var(--text-muted); font-weight: 700; }
 .results-feedback-card {

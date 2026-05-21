@@ -355,7 +355,7 @@ function getSurveyResultsSummary(surveyId, responses) {
     const counts = DORM_OPTIONS.map(() => 0);
     responses.forEach((entry) => {
       const selected = Number(entry.response?.selected);
-      if (Number.isFinite(selected) && selected >= 0 && selected <= counts.length - 1) {
+      if (Number.isFinite(selected) && selected >= 0 && selected < counts.length) {
         counts[selected] += 1;
       }
     });
