@@ -376,7 +376,6 @@ function renderTopBar(title = "", backBtn = false) {
     <div class="top-bar-left">${left}</div>
     <div class="top-bar-right">
       ${state.user ? `<button class="top-logout-btn" onclick="logout()">Log Out</button>` : ""}
-      <button class="top-emergency-btn" onclick="openEmergency()">🚨 EMERGENCY</button>
     </div>
   </div>`;
 }
