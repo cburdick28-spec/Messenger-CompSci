@@ -180,6 +180,9 @@ const state = {
   surveyResponsesLoading: false,
   surveyResponsesLoaded: false,
   surveyResponsesError: "",
+  surveyResultsModal: { open: false, surveyId: null },
+  surveyResultsFilter: { from: "", to: "" },
+  surveyRealtimeChannel: null,
 
   messageSent: false,
   reportSent: false,
@@ -196,6 +199,9 @@ const state = {
 function navigate(screen, back = false) {
   if (state.screen !== "splash") state.history.push(state.screen);
   state.screen = screen;
+  if (screen !== "surveys") {
+    state.surveyResultsModal = { open: false, surveyId: null };
+  }
   stopTriviaTimer();
   renderApp(back ? "slide-back" : "slide-in");
   window.scrollTo(0, 0);
@@ -205,6 +211,9 @@ function goBack() {
   const prev = state.history.pop() || "home";
   stopTriviaTimer();
   state.screen = prev;
+  if (prev !== "surveys") {
+    state.surveyResultsModal = { open: false, surveyId: null };
+  }
   renderApp("slide-back");
   window.scrollTo(0, 0);
 }
@@ -240,7 +249,7 @@ function syncAdminFromUser(user) {
 }
 
 function canViewSurveyData(user = state.user) {
-  return isApprovedTeacher(user);
+  return hasAdminAccess(user);
 }
 
 function escapeHTML(value) {
@@ -287,6 +296,114 @@ function getDormSummary(responses) {
     }
   });
   return { total, counts };
+}
+
+const SURVEY_META = {
+  dining: {
+    id: "dining",
+    title: "Dining Feedback",
+    subtitle: "Dining Services · Weekly Survey",
+    type: "rating",
+  },
+  dorm: {
+    id: "dorm",
+    title: "Dorm Life Survey",
+    subtitle: "Residential Life · Term Survey",
+    type: "multiple-choice",
+  },
+};
+
+const DORM_OPTIONS = [
+  "Excellent — love it here!",
+  "Good — minor improvements needed",
+  "Fair — several issues",
+  "Poor — needs major changes",
+];
+
+function getSurveyResponsesById(surveyId) {
+  if (surveyId === "dorm") return state.surveyResponses.dorm || [];
+  return state.surveyResponses.dining || [];
+}
+
+function formatSurveyTimestamp(ts) {
+  if (!ts) return "Unknown";
+  const dt = new Date(ts);
+  if (Number.isNaN(dt.getTime())) return "Unknown";
+  return dt.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function getFilteredSurveyResponses(surveyId) {
+  const { from, to } = state.surveyResultsFilter;
+  const fromDate = from ? new Date(`${from}T00:00:00`) : null;
+  const toDate = to ? new Date(`${to}T23:59:59.999`) : null;
+  return getSurveyResponsesById(surveyId).filter((entry) => {
+    const created = new Date(entry.created_at || 0);
+    if (fromDate && created < fromDate) return false;
+    if (toDate && created > toDate) return false;
+    return true;
+  });
+}
+
+function getSurveyResultsSummary(surveyId, responses) {
+  if (surveyId === "dorm") {
+    const counts = DORM_OPTIONS.map(() => 0);
+    responses.forEach((entry) => {
+      const selected = Number(entry.response?.selected);
+      if (Number.isFinite(selected) && selected >= 0 && selected <= counts.length - 1) {
+        counts[selected] += 1;
+      }
+    });
+    const yesNo = [
+      { label: "Positive", value: counts[0] + counts[1] },
+      { label: "Needs Work", value: counts[2] + counts[3] },
+    ];
+    return {
+      type: "multiple-choice",
+      total: responses.length,
+      counts,
+      yesNo,
+      options: DORM_OPTIONS,
+    };
+  }
+  const dining = getDiningSummary(responses);
+  return {
+    type: "rating",
+    total: dining.total,
+    avg: dining.avg,
+    counts: dining.counts,
+    comments: dining.comments,
+  };
+}
+
+function exportSurveyResultsCSV(surveyId) {
+  const rows = getFilteredSurveyResponses(surveyId);
+  const baseRows = [["Survey", "Submitted At", "Rating", "Choice", "Comment"]];
+  rows.forEach((entry) => {
+    baseRows.push([
+      surveyId,
+      entry.created_at || "",
+      entry.response?.rating ?? "",
+      entry.response?.answer ?? "",
+      entry.response?.comment ?? "",
+    ]);
+  });
+  const csv = baseRows.map((row) => row
+    .map((cell) => `"${String(cell ?? "").replace(/"/g, "\"\"")}"`)
+    .join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${surveyId}-survey-results.csv`);
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function getDayGreeting() {
@@ -630,6 +747,175 @@ function screenHouse() {
 }
 
 /* --- SURVEYS --- */
+function openSurveyResults(surveyId) {
+  if (!canViewSurveyData()) return;
+  state.surveyResultsModal = { open: true, surveyId };
+  if (!state.surveyResponsesLoaded) {
+    loadSurveyResponses(true);
+  }
+  renderApp();
+}
+
+function closeSurveyResults() {
+  state.surveyResultsModal = { open: false, surveyId: null };
+  renderApp();
+}
+
+function setSurveyResultsFilter(field, value) {
+  state.surveyResultsFilter[field] = value;
+  renderApp();
+}
+
+function clearSurveyResultsFilter() {
+  state.surveyResultsFilter = { from: "", to: "" };
+  renderApp();
+}
+
+function renderRatingChart(counts) {
+  const max = Math.max(...counts, 1);
+  return [5, 4, 3, 2, 1].map((rating) => {
+    const count = counts[rating - 1];
+    const width = Math.round((count / max) * 100);
+    return `
+      <div class="results-chart-row">
+        <div class="results-chart-label">${rating}★</div>
+        <div class="results-chart-bar-track">
+          <div class="results-chart-bar-fill" style="width:${width}%"></div>
+        </div>
+        <div class="results-chart-value">${count}</div>
+      </div>`;
+  }).join("");
+}
+
+function renderPieLegend(options, counts, total) {
+  const safeTotal = total || 1;
+  return options.map((opt, idx) => {
+    const pct = Math.round((counts[idx] / safeTotal) * 100);
+    return `
+      <div class="results-legend-row">
+        <span class="results-legend-dot results-legend-${idx % 4}"></span>
+        <span class="results-legend-name">${escapeHTML(opt)}</span>
+        <span class="results-legend-metric">${counts[idx]} · ${pct}%</span>
+      </div>`;
+  }).join("");
+}
+
+function renderSurveyFeedback(responses) {
+  const comments = responses
+    .filter((entry) => entry.response?.comment && String(entry.response.comment).trim())
+    .map((entry) => ({
+      comment: String(entry.response.comment).trim(),
+      createdAt: entry.created_at,
+    }));
+  if (!comments.length) {
+    return `<div class="results-feedback-empty">No text feedback yet.</div>`;
+  }
+  return comments.slice(0, 25).map((entry) => `
+      <div class="results-feedback-item">
+        <div class="results-feedback-text">${escapeHTML(entry.comment)}</div>
+        <div class="results-feedback-time">${formatSurveyTimestamp(entry.createdAt)}</div>
+      </div>
+    `).join("");
+}
+
+function renderSurveyResultsModal() {
+  if (!state.surveyResultsModal.open) return "";
+  const surveyId = state.surveyResultsModal.surveyId || "dining";
+  const meta = SURVEY_META[surveyId] || SURVEY_META.dining;
+  const filtered = getFilteredSurveyResponses(surveyId);
+  const summary = getSurveyResultsSummary(surveyId, filtered);
+  const total = summary.total || 0;
+  const fromVal = state.surveyResultsFilter.from;
+  const toVal = state.surveyResultsFilter.to;
+  const pieTotal = summary.counts ? summary.counts.reduce((sum, value) => sum + value, 0) : 0;
+  const pieValues = summary.counts || [0, 0, 0, 0];
+  const c1 = pieTotal ? (pieValues[0] / pieTotal) * 360 : 0;
+  const c2 = pieTotal ? (pieValues[1] / pieTotal) * 360 : 0;
+  const c3 = pieTotal ? (pieValues[2] / pieTotal) * 360 : 0;
+  const pieStyle = `background: conic-gradient(var(--navy) 0 ${c1}deg, var(--red) ${c1}deg ${c1 + c2}deg, #4f7ff1 ${c1 + c2}deg ${c1 + c2 + c3}deg, #94a3b8 ${c1 + c2 + c3}deg 360deg);`;
+  const yesNo = summary.yesNo || [{ label: "Yes", value: 0 }, { label: "No", value: 0 }];
+  const yesNoTotal = yesNo[0].value + yesNo[1].value || 1;
+  const yesPct = Math.round((yesNo[0].value / yesNoTotal) * 100);
+  const donutStyle = `background: conic-gradient(var(--navy) 0 ${yesPct}%, var(--red) ${yesPct}% 100%);`;
+  return `
+    <div class="results-modal-overlay" onclick="closeSurveyResults()">
+      <div class="results-modal" onclick="event.stopPropagation()">
+        <div class="results-modal-header">
+          <div>
+            <div class="results-modal-title">${escapeHTML(meta.title)} Results</div>
+            <div class="results-modal-sub">${escapeHTML(meta.subtitle)} · ${total} responses</div>
+          </div>
+          <button class="results-close-btn" onclick="closeSurveyResults()">✕</button>
+        </div>
+        <div class="results-toolbar">
+          <div class="results-filter-row">
+            <label>From <input type="date" value="${fromVal}" onchange="setSurveyResultsFilter('from', this.value)"></label>
+            <label>To <input type="date" value="${toVal}" onchange="setSurveyResultsFilter('to', this.value)"></label>
+            <button class="results-tool-btn" onclick="clearSurveyResultsFilter()">Clear</button>
+          </div>
+          <button class="results-tool-btn navy" onclick="exportSurveyResultsCSV('${surveyId}')">Export CSV</button>
+        </div>
+        ${state.surveyResponsesLoading ? `
+          <div class="results-skeleton-grid">
+            <div class="results-skeleton-card"></div>
+            <div class="results-skeleton-card"></div>
+          </div>
+        ` : state.surveyResponsesError ? `
+          <div class="results-empty-state">${escapeHTML(state.surveyResponsesError)}</div>
+        ` : !filtered.length ? `
+          <div class="results-empty-state">No responses yet for this filter range.</div>
+        ` : `
+          <div class="results-grid">
+            ${summary.type === "rating" ? `
+              <div class="results-card">
+                <div class="results-card-title">1–5 Star Ratings</div>
+                <div class="results-stat-row">
+                  <span>Average</span>
+                  <strong>${summary.avg}</strong>
+                </div>
+                <div class="results-stat-row">
+                  <span>Total Responses</span>
+                  <strong>${summary.total}</strong>
+                </div>
+                <div class="results-chart-list">${renderRatingChart(summary.counts)}</div>
+              </div>
+            ` : `
+              <div class="results-card">
+                <div class="results-card-title">Multiple Choice Split</div>
+                <div class="results-pie-wrap">
+                  <div class="results-pie" style="${pieStyle}"></div>
+                </div>
+                <div class="results-legend-list">${renderPieLegend(summary.options, summary.counts, summary.total)}</div>
+              </div>
+              <div class="results-card">
+                <div class="results-card-title">Donut (Positive vs Needs Work)</div>
+                <div class="results-donut-wrap">
+                  <div class="results-donut" style="${donutStyle}">
+                    <div class="results-donut-center">${yesPct}%</div>
+                  </div>
+                </div>
+                <div class="results-legend-row">
+                  <span class="results-legend-dot results-legend-0"></span>
+                  <span class="results-legend-name">${yesNo[0].label}</span>
+                  <span class="results-legend-metric">${yesNo[0].value}</span>
+                </div>
+                <div class="results-legend-row">
+                  <span class="results-legend-dot results-legend-1"></span>
+                  <span class="results-legend-name">${yesNo[1].label}</span>
+                  <span class="results-legend-metric">${yesNo[1].value}</span>
+                </div>
+              </div>
+            `}
+            <div class="results-card results-feedback-card">
+              <div class="results-card-title">Text Feedback</div>
+              <div class="results-feedback-scroll">${renderSurveyFeedback(filtered)}</div>
+            </div>
+          </div>
+        `}
+      </div>
+    </div>`;
+}
+
 function screenSurveys() {
   const showDataPanel = canViewSurveyData();
   const diningSummary = showDataPanel ? getDiningSummary(state.surveyResponses.dining || []) : null;
@@ -646,7 +932,7 @@ function screenSurveys() {
         <div class="survey-data-comment">${escapeHTML(comment)}</div>
       `).join("")
     : "";
-  const dormOptions = ["Excellent — love it here!","Good — minor improvements needed","Fair — several issues","Poor — needs major changes"];
+  const dormOptions = DORM_OPTIONS;
   const dormCounts = showDataPanel
     ? dormOptions.map((opt, i) => `
         <div class="survey-data-row">
@@ -686,6 +972,7 @@ function screenSurveys() {
     ? `<div class="survey-submitted">
         <div class="survey-submitted-icon">✅</div>
         <div class="survey-submitted-text">Response submitted! Thank you.</div>
+        ${showDataPanel ? `<button class="survey-results-btn submitted" onclick="openSurveyResults('dining')">View Results</button>` : ""}
        </div>`
     : `<div class="survey-body">
         <div class="survey-question">How would you rate the school lunch this week?</div>
@@ -696,14 +983,18 @@ function screenSurveys() {
         </div>
         <div class="survey-question" style="margin-top:10px;">Any comments?</div>
         <textarea class="message-textarea" id="survey1-comment" placeholder="Optional feedback..." style="min-height:80px;margin-bottom:14px;"></textarea>
-        <button class="survey-submit" onclick="submitSurvey1()">Submit Response</button>
-       </div>`;
+         <div class="survey-action-row">
+           <button class="survey-submit" onclick="submitSurvey1()">Submit Response</button>
+           ${showDataPanel ? `<button class="survey-results-btn" onclick="openSurveyResults('dining')">View Results</button>` : ""}
+         </div>
+        </div>`;
 
   const survey2Opts = ["Excellent — love it here!", "Good — minor improvements needed", "Fair — several issues", "Poor — needs major changes"];
   const survey2Body = state.survey2.submitted
     ? `<div class="survey-submitted">
         <div class="survey-submitted-icon">✅</div>
         <div class="survey-submitted-text">Response submitted! Thank you.</div>
+        ${showDataPanel ? `<button class="survey-results-btn submitted" onclick="openSurveyResults('dorm')">View Results</button>` : ""}
        </div>`
     : `<div class="survey-body">
         <div class="survey-question">How would you rate your overall dorm experience this term?</div>
@@ -714,8 +1005,11 @@ function screenSurveys() {
               ${opt}
             </div>`).join("")}
         </div>
-        <button class="survey-submit" onclick="submitSurvey2()">Submit Response</button>
-       </div>`;
+         <div class="survey-action-row">
+           <button class="survey-submit" onclick="submitSurvey2()">Submit Response</button>
+           ${showDataPanel ? `<button class="survey-results-btn" onclick="openSurveyResults('dorm')">View Results</button>` : ""}
+         </div>
+        </div>`;
 
   return `
   <div class="app-screen slide-in">
@@ -745,7 +1039,7 @@ function screenSurveys() {
         ${survey2Body}
       </div>
     </div>
-
+    ${renderSurveyResultsModal()}
   </div>`;
 }
 
@@ -1375,6 +1669,7 @@ async function handleApprovalFromURL() {
 }
 
 function logout() {
+  stopSurveyRealtime();
   localStorage.removeItem("brewster_user");
   state.user    = null;
   state.isAdmin = false;
@@ -1383,6 +1678,8 @@ function logout() {
   state.surveyResponsesLoading = false;
   state.surveyResponsesLoaded = false;
   state.surveyResponsesError = "";
+  state.surveyResultsModal = { open: false, surveyId: null };
+  state.surveyResultsFilter = { from: "", to: "" };
   state.screen  = "login";
   state.loginStep = "role";
   renderApp();
@@ -1466,8 +1763,13 @@ function bindEvents() {
     startCountdownTimer();
   }
 
-  if (state.screen === "surveys" && canViewSurveyData() && !state.surveyResponsesLoaded) {
-    loadSurveyResponses();
+  if (state.screen === "surveys" && canViewSurveyData()) {
+    startSurveyRealtime();
+    if (!state.surveyResponsesLoaded) {
+      loadSurveyResponses();
+    }
+  } else {
+    stopSurveyRealtime();
   }
 }
 
@@ -1595,7 +1897,7 @@ async function submitSurvey2() {
 async function loadSurveyResponses(force = false) {
   if (!sb) {
     state.surveyResponsesError = "Survey data is unavailable offline.";
-    state.surveyResponsesLoaded = false;
+    state.surveyResponsesLoaded = true;
     state.surveyResponsesLoading = false;
     renderApp();
     return;
@@ -1613,6 +1915,7 @@ async function loadSurveyResponses(force = false) {
   if (error) {
     state.surveyResponsesError = error.message;
     state.surveyResponsesLoading = false;
+    state.surveyResponsesLoaded = true;
     renderApp();
     return;
   }
@@ -1625,6 +1928,30 @@ async function loadSurveyResponses(force = false) {
   state.surveyResponsesLoading = false;
   state.surveyResponsesLoaded = true;
   renderApp();
+}
+
+function startSurveyRealtime() {
+  if (!sb || state.surveyRealtimeChannel) return;
+  try {
+    state.surveyRealtimeChannel = sb
+      .channel("survey-live-results")
+      .on("postgres_changes", { event: "*", schema: "public", table: "survey_responses" }, () => {
+        loadSurveyResponses(true);
+      })
+      .subscribe();
+  } catch (err) {
+    console.warn("Survey realtime unavailable:", err);
+  }
+}
+
+function stopSurveyRealtime() {
+  if (!sb || !state.surveyRealtimeChannel) return;
+  try {
+    sb.removeChannel(state.surveyRealtimeChannel);
+  } catch (err) {
+    console.warn("Unable to stop survey realtime channel:", err);
+  }
+  state.surveyRealtimeChannel = null;
 }
 
 /* ===== ANONYMOUS MESSAGE ===== */
