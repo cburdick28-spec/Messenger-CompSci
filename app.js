@@ -228,7 +228,11 @@ function navigate(screen, back = false) {
 }
 
 function goBack() {
-  const prev = state.history.pop() || "home";
+  let prev = state.history.pop();
+  while (prev === state.screen && state.history.length) {
+    prev = state.history.pop();
+  }
+  if (!prev || prev === state.screen) prev = "home";
   stopTriviaTimer();
   state.screen = prev;
   if (prev !== "surveys") {
