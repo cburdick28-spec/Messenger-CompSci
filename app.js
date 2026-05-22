@@ -303,7 +303,8 @@ function loadTriviaCooldownFromStorage() {
     const raw = localStorage.getItem(TRIVIA_COOLDOWN_STORAGE_KEY);
     if (!raw) return;
     const until = Number(raw);
-    if (!Number.isFinite(until)) {
+    const now = Date.now();
+    if (!Number.isFinite(until) || until <= now || until > now + TRIVIA_COOLDOWN_MS) {
       localStorage.removeItem(TRIVIA_COOLDOWN_STORAGE_KEY);
       return;
     }
@@ -631,6 +632,10 @@ function screenHome() {
   const seniorAdminAccess = hasSeniorAdminAccess();
   const triviaRemaining = getTriviaCooldownRemaining();
   const triviaLocked = triviaRemaining > 0;
+  const triviaButtonTitle = triviaLocked
+    ? `Trivia unlocks in ${formatCountdown(triviaRemaining)}`
+    : "Start trivia now";
+  const triviaButtonLabel = triviaLocked ? "LOCKED" : "PLAY NOW";
   const maxPts = Math.max(...HOUSES.map(h => h.pts));
   const houseRows = HOUSES.map(h => `
     <div class="house-mini-row">
@@ -684,7 +689,7 @@ function screenHome() {
             <div style="font-size:11px;opacity:0.65;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px;">Next Game In</div>
             <div class="trivia-countdown" id="hero-countdown">${triviaLocked ? formatCountdown(triviaRemaining) : "READY!"}</div>
           </div>
-          <button class="trivia-play-btn ${triviaLocked ? "disabled" : ""}" id="trivia-play-btn" ${triviaLocked ? "disabled" : ""} title="${triviaLocked ? `Trivia unlocks in ${formatCountdown(triviaRemaining)}` : "Start trivia now"}" onclick="event.stopPropagation();openTriviaFromDashboard()">${triviaLocked ? "LOCKED" : "PLAY NOW"}</button>
+          <button class="trivia-play-btn ${triviaLocked ? "disabled" : ""}" id="trivia-play-btn" ${triviaLocked ? "disabled" : ""} title="${triviaButtonTitle}" onclick="event.stopPropagation();openTriviaFromDashboard()">${triviaButtonLabel}</button>
         </div>
       </div>
 
@@ -2043,7 +2048,7 @@ function startTriviaTimer() {
       state.trivia.answered = true;
       state.trivia.selectedIdx = -1;
       state.trivia.gameOver = true;
-      if (!isTriviaLocked()) startTriviaCooldown();
+      startTriviaCooldown();
       renderApp();
     }
   }, 1000);
@@ -2075,7 +2080,7 @@ function nextTriviaQ() {
   const next = state.trivia.current + 1;
   if (next >= TRIVIA_QUESTIONS.length) {
     state.trivia.gameOver = true;
-    if (!isTriviaLocked()) startTriviaCooldown();
+    startTriviaCooldown();
     renderApp();
     return;
   }
@@ -2514,7 +2519,7 @@ async function initApp() {
     console.warn("Supabase init failed, running in offline mode:", e);
   }
 
-  // Restore existing session from localStorage
+  // Restore existing session from localStorage before approval-link checks
   const hasSession = loadUserFromStorage();
 
   // Check if this is an admin approval link (?approve=TOKEN)
