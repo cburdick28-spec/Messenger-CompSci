@@ -382,6 +382,14 @@ function escapeHTML(value) {
   }[ch]));
 }
 
+function isMissingColumnError(error, table, column) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  const msg = String(error.message || "");
+  const pattern = new RegExp(`${table}\\.${column} does not exist`, "i");
+  return pattern.test(msg);
+}
+
 function getDiningSummary(responses) {
   const counts = [0, 0, 0, 0, 0];
   let total = 0;
@@ -2297,7 +2305,7 @@ async function sendAnonMessage() {
     content:  msg,
   };
   let { error } = await sb.from("messages").insert(payload);
-  if (error && (error.code === "42703" || /messages\.category does not exist/i.test(String(error.message || "")))) {
+  if (isMissingColumnError(error, "messages", "category")) {
     ({ error } = await sb.from("messages").insert({ content: msg }));
   }
   if (error) {
@@ -2328,7 +2336,7 @@ async function loadAdminMessages(force = false) {
     .select("id,category,content,created_at")
     .order("created_at", { ascending: false })
     .limit(300);
-  if (error && (error.code === "42703" || /messages\.category does not exist/i.test(String(error.message || "")))) {
+  if (isMissingColumnError(error, "messages", "category")) {
     ({ data, error } = await sb
       .from("messages")
       .select("id,content,created_at")
