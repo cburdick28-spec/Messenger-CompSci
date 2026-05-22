@@ -97,6 +97,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
+  CREATE POLICY "Public read messages" ON messages FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
   CREATE POLICY "Public insert surveys" ON survey_responses FOR INSERT WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 

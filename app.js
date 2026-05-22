@@ -204,6 +204,7 @@ const state = {
   surveyRealtimeChannel: null,
 
   messageSent: false,
+  messageError: "",
   reportSent: false,
 
   adminPriority: "normal",
@@ -219,6 +220,9 @@ const state = {
 function navigate(screen, back = false) {
   if (state.screen !== "splash") state.history.push(state.screen);
   state.screen = screen;
+  if (screen !== "message") {
+    state.messageError = "";
+  }
   if (screen !== "surveys") {
     state.surveyResultsModal = { open: false, surveyId: null };
   }
@@ -235,6 +239,9 @@ function goBack() {
   if (!prev || prev === state.screen) prev = "home";
   stopTriviaTimer();
   state.screen = prev;
+  if (prev !== "message") {
+    state.messageError = "";
+  }
   if (prev !== "surveys") {
     state.surveyResultsModal = { open: false, surveyId: null };
   }
@@ -1249,6 +1256,7 @@ function screenMessage() {
         <div class="message-label">Your Message</div>
         <textarea class="message-textarea" id="anon-msg" placeholder="Write your message here... You're safe to share anything."></textarea>
       </div>
+      ${state.messageError ? `<div class="message-error" role="alert" aria-live="assertive">${escapeHTML(state.messageError)}</div>` : ""}
       <button class="message-send-btn" onclick="sendAnonMessage()">
         ${ICON.send}
         Send Anonymously
@@ -2272,17 +2280,27 @@ function setMsgCat(i) {
 async function sendAnonMessage() {
   const el = document.getElementById("anon-msg");
   const msg = el ? el.value.trim() : "";
+  state.messageError = "";
   if (!msg) {
     el && (el.style.borderColor = "var(--red)");
     el && (el.placeholder = "Please write a message before sending...");
     return;
   }
   const cats = ["General","Academic","Social","Wellbeing","Facilities","Other"];
-  if (sb) {
-    await sb.from("messages").insert({
-      category: state.messageCategory != null ? cats[state.messageCategory] : null,
-      content:  msg,
-    });
+  if (!sb) {
+    state.messageError = "Message service is unavailable offline. Please try again when connected.";
+    renderApp();
+    return;
+  }
+  const { error } = await sb.from("messages").insert({
+    category: state.messageCategory != null ? cats[state.messageCategory] : null,
+    content:  msg,
+  });
+  if (error) {
+    console.warn("Unable to send anonymous message:", error);
+    state.messageError = "Unable to send message right now. Please try again.";
+    renderApp();
+    return;
   }
   state.messageSent = true;
   renderApp();
@@ -2309,6 +2327,7 @@ async function loadAdminMessages(force = false) {
   state.adminMessagesLoading = false;
   if (error) {
     state.adminMessagesError = error.message;
+    state.adminMessagesLoaded = true;
     renderApp();
     return;
   }
