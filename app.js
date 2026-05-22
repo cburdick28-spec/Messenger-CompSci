@@ -144,6 +144,7 @@ const HOURS_PER_DAY = 24;
 const TRIVIA_COOLDOWN_MS = HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND;
 const TRIVIA_COOLDOWN_STORAGE_KEY = "brewster_trivia_cooldown_until";
 const SURVEY_SUBMISSIONS_STORAGE_KEY = "brewster_survey_submissions";
+const SCREEN_ANIMATION_CLASSES = ["slide-in", "slide-back", "fade-in"];
 
 /* ===== STATE ===== */
 
@@ -1989,7 +1990,8 @@ function screenProfilePlaceholder() {
 const NO_SIDEBAR_SCREENS = new Set(["splash","login","pending","approval-success"]);
 
 function renderApp(anim) {
-  const effectiveAnim = anim ?? (state.lastRenderedScreen !== state.screen ? "slide-in" : "");
+  const isScreenChange = state.lastRenderedScreen !== state.screen;
+  const effectiveAnim = anim ?? (isScreenChange ? "slide-in" : "");
   const root = document.getElementById("root");
   if (NO_SIDEBAR_SCREENS.has(state.screen)) {
     root.innerHTML = getScreenHTML(effectiveAnim) + renderEmergencyOverlay();
@@ -2005,7 +2007,7 @@ function renderApp(anim) {
   }
   const screenEl = root.querySelector(".app-screen");
   if (screenEl) {
-    screenEl.classList.remove("slide-in", "slide-back", "fade-in");
+    screenEl.classList.remove(...SCREEN_ANIMATION_CLASSES);
     if (effectiveAnim) screenEl.classList.add(effectiveAnim);
   }
   state.lastRenderedScreen = state.screen;
