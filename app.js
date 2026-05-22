@@ -390,8 +390,14 @@ function isSchemaMismatchError(error) {
 }
 
 function normalizeAdminMessageRow(row, index) {
+  const fallbackIdSource = [
+    row?.created_at ?? "",
+    row?.category ?? "",
+    row?.content ?? row?.message ?? "",
+    String(index),
+  ].join("|");
   return {
-    id: row?.id || `fallback-${index}`,
+    id: row?.id || fallbackIdSource,
     category: row?.category ?? null,
     content: row?.content ?? row?.message ?? "",
     created_at: row?.created_at ?? null,
