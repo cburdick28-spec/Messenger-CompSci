@@ -2292,10 +2292,14 @@ async function sendAnonMessage() {
     renderApp();
     return;
   }
-  const { error } = await sb.from("messages").insert({
+  const payload = {
     category: state.messageCategory != null ? cats[state.messageCategory] : null,
     content:  msg,
-  });
+  };
+  let { error } = await sb.from("messages").insert(payload);
+  if (error && (error.code === "42703" || /messages\.category does not exist/i.test(String(error.message || "")))) {
+    ({ error } = await sb.from("messages").insert({ content: msg }));
+  }
   if (error) {
     console.warn("Unable to send anonymous message:", error);
     state.messageError = "Unable to send message right now. Please try again.";
@@ -2319,11 +2323,21 @@ async function loadAdminMessages(force = false) {
   state.adminMessagesLoading = true;
   state.adminMessagesError = "";
   renderApp();
-  const { data, error } = await sb
+  let { data, error } = await sb
     .from("messages")
     .select("id,category,content,created_at")
     .order("created_at", { ascending: false })
     .limit(300);
+  if (error && (error.code === "42703" || /messages\.category does not exist/i.test(String(error.message || "")))) {
+    ({ data, error } = await sb
+      .from("messages")
+      .select("id,content,created_at")
+      .order("created_at", { ascending: false })
+      .limit(300));
+    if (!error && Array.isArray(data)) {
+      data = data.map((row) => ({ ...row, category: null }));
+    }
+  }
   state.adminMessagesLoading = false;
   if (error) {
     state.adminMessagesError = error.message;
