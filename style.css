@@ -2016,6 +2016,16 @@ ul { list-style: none; }
   transition: opacity 0.15s, transform 0.1s;
 }
 .message-send-btn:active { transform: scale(0.98); }
+.message-error {
+  border: 1px dashed rgba(139,0,0,0.3);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  color: var(--red);
+  font-size: 13px;
+  text-align: center;
+  background: rgba(139,0,0,0.05);
+  margin-bottom: 12px;
+}
 .message-success {
   display: flex;
   flex-direction: column;

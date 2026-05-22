@@ -1250,7 +1250,7 @@ function screenMessage() {
         <div class="message-label">Your Message</div>
         <textarea class="message-textarea" id="anon-msg" placeholder="Write your message here... You're safe to share anything."></textarea>
       </div>
-      ${state.messageError ? `<div class="admin-data-empty" role="alert" aria-live="polite" style="margin-bottom:12px;">${escapeHTML(state.messageError)}</div>` : ""}
+      ${state.messageError ? `<div class="message-error" role="alert" aria-live="polite">${escapeHTML(state.messageError)}</div>` : ""}
       <button class="message-send-btn" onclick="sendAnonMessage()">
         ${ICON.send}
         Send Anonymously
@@ -2295,6 +2295,7 @@ async function sendAnonMessage() {
     renderApp();
     return;
   }
+  state.messageError = "";
   state.messageSent = true;
   renderApp();
 }
