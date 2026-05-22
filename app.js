@@ -204,6 +204,7 @@ const state = {
   surveyRealtimeChannel: null,
 
   messageSent: false,
+  messageError: "",
   reportSent: false,
 
   adminPriority: "normal",
@@ -1249,6 +1250,7 @@ function screenMessage() {
         <div class="message-label">Your Message</div>
         <textarea class="message-textarea" id="anon-msg" placeholder="Write your message here... You're safe to share anything."></textarea>
       </div>
+      ${state.messageError ? `<div class="admin-data-empty" role="alert" aria-live="polite" style="margin-bottom:12px;">${escapeHTML(state.messageError)}</div>` : ""}
       <button class="message-send-btn" onclick="sendAnonMessage()">
         ${ICON.send}
         Send Anonymously
@@ -2272,17 +2274,26 @@ function setMsgCat(i) {
 async function sendAnonMessage() {
   const el = document.getElementById("anon-msg");
   const msg = el ? el.value.trim() : "";
+  state.messageError = "";
   if (!msg) {
     el && (el.style.borderColor = "var(--red)");
     el && (el.placeholder = "Please write a message before sending...");
     return;
   }
   const cats = ["General","Academic","Social","Wellbeing","Facilities","Other"];
-  if (sb) {
-    await sb.from("messages").insert({
-      category: state.messageCategory != null ? cats[state.messageCategory] : null,
-      content:  msg,
-    });
+  if (!sb) {
+    state.messageError = "Message service is unavailable offline. Please try again when connected.";
+    renderApp();
+    return;
+  }
+  const { error } = await sb.from("messages").insert({
+    category: state.messageCategory != null ? cats[state.messageCategory] : null,
+    content:  msg,
+  });
+  if (error) {
+    state.messageError = `Unable to send message: ${error.message}`;
+    renderApp();
+    return;
   }
   state.messageSent = true;
   renderApp();
@@ -2309,6 +2320,7 @@ async function loadAdminMessages(force = false) {
   state.adminMessagesLoading = false;
   if (error) {
     state.adminMessagesError = error.message;
+    state.adminMessagesLoaded = true;
     renderApp();
     return;
   }
