@@ -894,6 +894,13 @@ ul { list-style: none; }
 }
 .trivia-play-btn:hover { transform: scale(1.04); }
 .trivia-play-btn:active { transform: scale(0.97); }
+.trivia-play-btn.disabled,
+.trivia-play-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 
 /* House Points Card */
 .house-card {
@@ -2028,6 +2035,95 @@ ul { list-style: none; }
   color: white;
   border-radius: var(--r-md);
   font-size: 15px;
+  font-weight: 800;
+}
+
+.trivia-cooldown-note {
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.admin-data-screen {
+  padding: 28px 32px 40px;
+  max-width: 860px;
+}
+.admin-data-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.admin-data-title {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text);
+}
+.admin-data-refresh {
+  background: var(--navy);
+  color: white;
+  border-radius: var(--r-sm);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.admin-data-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  background: var(--gray-50);
+}
+.admin-data-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-xs);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.admin-data-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.admin-data-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,34,102,0.08);
+  color: var(--navy);
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+.admin-data-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.admin-data-content {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+}
+.admin-data-actions {
+  margin-top: 8px;
+}
+.admin-data-approve {
+  background: var(--green);
+  color: white;
+  border-radius: var(--r-sm);
+  padding: 8px 14px;
+  font-size: 12px;
   font-weight: 800;
 }
 
