@@ -382,6 +382,14 @@ function escapeHTML(value) {
   }[ch]));
 }
 
+function isMissingColumnError(error, table, column) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  const msg = String(error.message || "").toLowerCase();
+  const missingColumnText = `${table}.${column} does not exist`.toLowerCase();
+  return msg.includes(missingColumnText);
+}
+
 function getDiningSummary(responses) {
   const counts = [0, 0, 0, 0, 0];
   let total = 0;
@@ -2292,10 +2300,14 @@ async function sendAnonMessage() {
     renderApp();
     return;
   }
-  const { error } = await sb.from("messages").insert({
+  const payload = {
     category: state.messageCategory != null ? cats[state.messageCategory] : null,
     content:  msg,
-  });
+  };
+  let { error } = await sb.from("messages").insert(payload);
+  if (isMissingColumnError(error, "messages", "category")) {
+    ({ error } = await sb.from("messages").insert({ content: msg }));
+  }
   if (error) {
     console.warn("Unable to send anonymous message:", error);
     state.messageError = "Unable to send message right now. Please try again.";
@@ -2319,11 +2331,22 @@ async function loadAdminMessages(force = false) {
   state.adminMessagesLoading = true;
   state.adminMessagesError = "";
   renderApp();
-  const { data, error } = await sb
+  let { data, error } = await sb
     .from("messages")
     .select("id,category,content,created_at")
     .order("created_at", { ascending: false })
     .limit(300);
+  if (isMissingColumnError(error, "messages", "category")) {
+    ({ data, error } = await sb
+      .from("messages")
+      .select("id,content,created_at")
+      .order("created_at", { ascending: false })
+      .limit(300));
+    if (!error && Array.isArray(data)) {
+      const enrichedData = data.map((row) => ({ ...row, category: null }));
+      data = enrichedData;
+    }
+  }
   state.adminMessagesLoading = false;
   if (error) {
     state.adminMessagesError = error.message;
