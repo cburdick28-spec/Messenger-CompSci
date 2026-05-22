@@ -1256,7 +1256,7 @@ function screenMessage() {
         <div class="message-label">Your Message</div>
         <textarea class="message-textarea" id="anon-msg" placeholder="Write your message here... You're safe to share anything."></textarea>
       </div>
-      ${state.messageError ? `<div class="message-error" role="alert" aria-live="polite">${escapeHTML(state.messageError)}</div>` : ""}
+      ${state.messageError ? `<div class="message-error" role="alert" aria-live="assertive">${escapeHTML(state.messageError)}</div>` : ""}
       <button class="message-send-btn" onclick="sendAnonMessage()">
         ${ICON.send}
         Send Anonymously
@@ -2297,7 +2297,8 @@ async function sendAnonMessage() {
     content:  msg,
   });
   if (error) {
-    state.messageError = `Unable to send message: ${error.message}`;
+    console.warn("Unable to send anonymous message:", error);
+    state.messageError = "Unable to send message right now. Please try again.";
     renderApp();
     return;
   }
