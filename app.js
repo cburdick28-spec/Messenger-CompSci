@@ -385,9 +385,9 @@ function escapeHTML(value) {
 function isMissingColumnError(error, table, column) {
   if (!error) return false;
   if (error.code === "42703") return true;
-  const msg = String(error.message || "");
-  const pattern = new RegExp(`${table}\\.${column} does not exist`, "i");
-  return pattern.test(msg);
+  const msg = String(error.message || "").toLowerCase();
+  const missingColumnText = `${table}.${column} does not exist`.toLowerCase();
+  return msg.includes(missingColumnText);
 }
 
 function getDiningSummary(responses) {
@@ -2343,7 +2343,8 @@ async function loadAdminMessages(force = false) {
       .order("created_at", { ascending: false })
       .limit(300));
     if (!error && Array.isArray(data)) {
-      data = data.map((row) => ({ ...row, category: null }));
+      const enrichedData = data.map((row) => ({ ...row, category: null }));
+      data = enrichedData;
     }
   }
   state.adminMessagesLoading = false;
