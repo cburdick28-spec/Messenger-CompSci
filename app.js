@@ -143,6 +143,7 @@ const MINUTES_PER_HOUR = 60;
 const HOURS_PER_DAY = 24;
 const TRIVIA_COOLDOWN_MS = HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND;
 const TRIVIA_COOLDOWN_STORAGE_KEY = "brewster_trivia_cooldown_until";
+const SURVEY_SUBMISSIONS_STORAGE_KEY = "brewster_survey_submissions";
 
 /* ===== STATE ===== */
 
@@ -309,6 +310,52 @@ function loadTriviaCooldownFromStorage() {
     state.triviaCooldownUntil = until;
     getTriviaCooldownRemaining();
   } catch (e) {}
+}
+
+function getSurveySubmissionIdentity(user = state.user) {
+  return normalizeEmail(user?.email) || user?.id || null;
+}
+
+function readSurveySubmissionStore() {
+  try {
+    const raw = localStorage.getItem(SURVEY_SUBMISSIONS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch (e) {
+    return {};
+  }
+}
+
+function writeSurveySubmissionStore(store) {
+  try {
+    localStorage.setItem(SURVEY_SUBMISSIONS_STORAGE_KEY, JSON.stringify(store));
+  } catch (e) {}
+}
+
+function loadSurveySubmissionState(user = state.user) {
+  state.survey1.rating = 0;
+  state.survey2.selected = null;
+  state.survey1.submitted = false;
+  state.survey2.submitted = false;
+  const identity = getSurveySubmissionIdentity(user);
+  if (!identity) return;
+  const store = readSurveySubmissionStore();
+  const submissions = store[identity] || {};
+  state.survey1.submitted = !!submissions.dining;
+  state.survey2.submitted = !!submissions.dorm;
+}
+
+function markSurveySubmitted(surveyId, user = state.user) {
+  const identity = getSurveySubmissionIdentity(user);
+  if (!identity) return;
+  const store = readSurveySubmissionStore();
+  store[identity] = {
+    ...(store[identity] || {}),
+    [surveyId]: true,
+  };
+  writeSurveySubmissionStore(store);
 }
 
 function escapeHTML(value) {
@@ -1665,6 +1712,7 @@ async function loginStudent() {
     // Offline fallback
     state.user = { id: "student-" + Date.now(), name: name || email.split("@")[0], email, role: "student", status: "approved" };
     syncAdminFromUser(state.user);
+    loadSurveySubmissionState(state.user);
     localStorage.setItem("brewster_user", JSON.stringify(state.user));
     state.screen = "home"; renderApp("fade-in"); return;
   }
@@ -1692,6 +1740,7 @@ async function loginStudent() {
     status: "approved",
   };
   syncAdminFromUser(state.user);
+  loadSurveySubmissionState(state.user);
   localStorage.setItem("brewster_user", JSON.stringify(state.user));
   state.screen = "home";
   renderApp("fade-in");
@@ -1738,6 +1787,7 @@ async function requestTeacherAccess() {
           approvalToken: existingUser.approval_token || null,
         };
         syncAdminFromUser(state.user);
+        loadSurveySubmissionState(state.user);
         localStorage.setItem("brewster_user", JSON.stringify(state.user));
         state.screen = "home";
         renderApp("fade-in");
@@ -1753,6 +1803,7 @@ async function requestTeacherAccess() {
           approvalToken: existingUser.approval_token,
         };
         syncAdminFromUser(state.user);
+        loadSurveySubmissionState(state.user);
         localStorage.setItem("brewster_user", JSON.stringify(state.user));
         state.screen = "pending";
         renderApp();
@@ -1783,6 +1834,7 @@ async function requestTeacherAccess() {
   // Save session locally so teacher sees pending screen on return
   state.user = { id: token, name, email, role: "teacher", status: "pending", approvalToken: token };
   syncAdminFromUser(state.user);
+  loadSurveySubmissionState(state.user);
   localStorage.setItem("brewster_user", JSON.stringify(state.user));
 
   // Try EmailJS first
@@ -1824,6 +1876,7 @@ async function checkApprovalStatus() {
     state.user.status = "approved";
     localStorage.setItem("brewster_user", JSON.stringify(state.user));
     syncAdminFromUser(state.user);
+    loadSurveySubmissionState(state.user);
     state.screen  = "home";
     renderApp("fade-in");
   } else {
@@ -1871,6 +1924,8 @@ function logout() {
   state.pendingTeachersLoading = false;
   state.pendingTeachersLoaded = false;
   state.pendingTeachersError = "";
+  state.survey1 = { rating: 0, submitted: false };
+  state.survey2 = { selected: null, submitted: false };
   state.screen  = "login";
   state.loginStep = "role";
   renderApp();
@@ -1882,6 +1937,7 @@ function loadUserFromStorage() {
     if (saved) {
       state.user = JSON.parse(saved);
       syncAdminFromUser(state.user);
+      loadSurveySubmissionState(state.user);
       return true;
     }
   } catch(e) {}
@@ -1987,7 +2043,7 @@ function startTriviaTimer() {
       state.trivia.answered = true;
       state.trivia.selectedIdx = -1;
       state.trivia.gameOver = true;
-      startTriviaCooldown();
+      if (!isTriviaLocked()) startTriviaCooldown();
       renderApp();
     }
   }, 1000);
@@ -2019,7 +2075,7 @@ function nextTriviaQ() {
   const next = state.trivia.current + 1;
   if (next >= TRIVIA_QUESTIONS.length) {
     state.trivia.gameOver = true;
-    startTriviaCooldown();
+    if (!isTriviaLocked()) startTriviaCooldown();
     renderApp();
     return;
   }
@@ -2050,6 +2106,14 @@ function finishTriviaSession() {
   navigate("home");
 }
 
+function openTriviaFromDashboard() {
+  if (isTriviaLocked()) {
+    navigate("trivia");
+    return;
+  }
+  resetTrivia();
+}
+
 /* ===== COUNTDOWN TIMER ===== */
 
 function startCountdownTimer() {
@@ -2065,6 +2129,7 @@ function startCountdownTimer() {
       btn.disabled = locked;
       btn.classList.toggle("disabled", locked);
       btn.textContent = locked ? "LOCKED" : "PLAY NOW";
+      btn.title = locked ? `Trivia unlocks in ${formatCountdown(remaining)}` : "Start trivia now";
     }
   }, 1000);
 }
@@ -2077,6 +2142,7 @@ function setStar1(n) {
 }
 
 async function submitSurvey1() {
+  if (state.survey1.submitted) return;
   if (sb) {
     const comment = document.getElementById("survey1-comment");
     await sb.from("survey_responses").insert({
@@ -2085,6 +2151,7 @@ async function submitSurvey1() {
     });
   }
   state.survey1.submitted = true;
+  markSurveySubmitted("dining");
   if (canViewSurveyData()) {
     loadSurveyResponses(true);
   }
@@ -2097,6 +2164,7 @@ function setSurvey2(i) {
 }
 
 async function submitSurvey2() {
+  if (state.survey2.submitted) return;
   if (state.survey2.selected === null) return;
   if (sb) {
     const opts = ["Excellent — love it here!","Good — minor improvements needed","Fair — several issues","Poor — needs major changes"];
@@ -2106,6 +2174,7 @@ async function submitSurvey2() {
     });
   }
   state.survey2.submitted = true;
+  markSurveySubmitted("dorm");
   if (canViewSurveyData()) {
     loadSurveyResponses(true);
   }
@@ -2276,6 +2345,12 @@ async function approveTeacher(userId) {
     return;
   }
   await loadPendingTeachers(true);
+}
+
+function approveTeacherFromButton(buttonEl) {
+  const userId = buttonEl?.dataset?.userId || "";
+  if (!userId) return;
+  approveTeacher(userId);
 }
 
 /* ===== REPORT PROBLEM ===== */
