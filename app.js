@@ -382,12 +382,48 @@ function escapeHTML(value) {
   }[ch]));
 }
 
-function isMissingColumnError(error, table, column) {
+function isSchemaMismatchError(error) {
   if (!error) return false;
-  if (error.code === "42703") return true;
+  if (error.code === "42703" || error.code === "42P01") return true;
   const msg = String(error.message || "").toLowerCase();
-  const missingColumnText = `${table}.${column} does not exist`.toLowerCase();
-  return msg.includes(missingColumnText);
+  return msg.includes("does not exist") || msg.includes("unknown column");
+}
+
+function normalizeAdminMessageRow(row, index) {
+  return {
+    id: row?.id || `fallback-${index}`,
+    category: row?.category ?? null,
+    content: row?.content ?? row?.message ?? "",
+    created_at: row?.created_at ?? null,
+  };
+}
+
+async function fetchAdminMessagesWithFallback() {
+  const attempts = [
+    { select: "id,category,content,created_at", withOrder: true },
+    { select: "id,content,created_at", withOrder: true },
+    { select: "content,created_at", withOrder: true },
+    { select: "content", withOrder: false },
+    { select: "*", withOrder: false },
+  ];
+  let lastError = null;
+
+  for (const attempt of attempts) {
+    const query = sb.from("messages").select(attempt.select).limit(300);
+    const { data, error } = attempt.withOrder
+      ? await query.order("created_at", { ascending: false })
+      : await query;
+    if (!error) {
+      const normalized = Array.isArray(data)
+        ? data.map((row, index) => normalizeAdminMessageRow(row, index))
+        : [];
+      return { data: normalized, error: null };
+    }
+    lastError = error;
+    if (!isSchemaMismatchError(error)) return { data: null, error };
+  }
+
+  return { data: null, error: lastError };
 }
 
 function getDiningSummary(responses) {
@@ -2304,9 +2340,17 @@ async function sendAnonMessage() {
     category: state.messageCategory != null ? cats[state.messageCategory] : null,
     content:  msg,
   };
-  let { error } = await sb.from("messages").insert(payload);
-  if (isMissingColumnError(error, "messages", "category")) {
-    ({ error } = await sb.from("messages").insert({ content: msg }));
+  const payloadAttempts = [
+    payload,
+    { content: msg },
+    { message: msg },
+  ];
+  let error = null;
+  for (const candidate of payloadAttempts) {
+    const result = await sb.from("messages").insert(candidate);
+    error = result.error;
+    if (!error) break;
+    if (!isSchemaMismatchError(error)) break;
   }
   if (error) {
     console.warn("Unable to send anonymous message:", error);
@@ -2331,22 +2375,7 @@ async function loadAdminMessages(force = false) {
   state.adminMessagesLoading = true;
   state.adminMessagesError = "";
   renderApp();
-  let { data, error } = await sb
-    .from("messages")
-    .select("id,category,content,created_at")
-    .order("created_at", { ascending: false })
-    .limit(300);
-  if (isMissingColumnError(error, "messages", "category")) {
-    ({ data, error } = await sb
-      .from("messages")
-      .select("id,content,created_at")
-      .order("created_at", { ascending: false })
-      .limit(300));
-    if (!error && Array.isArray(data)) {
-      const enrichedData = data.map((row) => ({ ...row, category: null }));
-      data = enrichedData;
-    }
-  }
+  const { data, error } = await fetchAdminMessagesWithFallback();
   state.adminMessagesLoading = false;
   if (error) {
     state.adminMessagesError = error.message;
