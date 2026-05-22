@@ -137,7 +137,11 @@ const HOUSE_EVENTS = [
 
 const ADMIN_PIN = "2024";
 const TRIVIA_SECONDS = 30;
-const TRIVIA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const MS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
+const MINUTES_PER_HOUR = 60;
+const HOURS_PER_DAY = 24;
+const TRIVIA_COOLDOWN_MS = HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND;
 const TRIVIA_COOLDOWN_STORAGE_KEY = "brewster_trivia_cooldown_until";
 
 /* ===== STATE ===== */
@@ -633,7 +637,7 @@ function screenHome() {
             <div style="font-size:11px;opacity:0.65;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px;">Next Game In</div>
             <div class="trivia-countdown" id="hero-countdown">${triviaLocked ? formatCountdown(triviaRemaining) : "READY!"}</div>
           </div>
-          <button class="trivia-play-btn ${triviaLocked ? "disabled" : ""}" id="trivia-play-btn" ${triviaLocked ? "disabled" : ""} onclick="event.stopPropagation();navigate('trivia')">${triviaLocked ? "LOCKED" : "PLAY NOW"}</button>
+          <button class="trivia-play-btn ${triviaLocked ? "disabled" : ""}" id="trivia-play-btn" ${triviaLocked ? "disabled" : ""} title="${triviaLocked ? `Trivia unlocks in ${formatCountdown(triviaRemaining)}` : "Start trivia now"}" onclick="event.stopPropagation();openTriviaFromDashboard()">${triviaLocked ? "LOCKED" : "PLAY NOW"}</button>
         </div>
       </div>
 
@@ -1256,7 +1260,7 @@ function screenAdminApprovals() {
             <div class="admin-data-content"><strong>${escapeHTML(teacher.name || "Unknown")}</strong></div>
             <div class="admin-data-content">${escapeHTML(teacher.email || "")}</div>
             <div class="admin-data-actions">
-              <button class="admin-data-approve" onclick="approveTeacher('${escapeHTML(teacher.id)}')">Approve</button>
+              <button class="admin-data-approve" data-user-id="${escapeHTML(teacher.id)}" onclick="approveTeacherFromButton(this)">Approve</button>
             </div>
           </div>
         `).join("");
