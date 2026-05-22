@@ -2295,7 +2295,6 @@ async function sendAnonMessage() {
     renderApp();
     return;
   }
-  state.messageError = "";
   state.messageSent = true;
   renderApp();
 }
