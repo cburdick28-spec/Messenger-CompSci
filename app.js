@@ -137,6 +137,8 @@ const HOUSE_EVENTS = [
 
 const ADMIN_PIN = "2024";
 const TRIVIA_SECONDS = 30;
+const TRIVIA_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const TRIVIA_COOLDOWN_STORAGE_KEY = "brewster_trivia_cooldown_until";
 
 /* ===== STATE ===== */
 
@@ -145,6 +147,7 @@ const ADMIN_EMAIL_ALLOWLIST = new Set([
   "cburdick28@brewstermadrid.com",
   "lbondi28@brewstermadrid.com",
   "arosario28@brewstermadrid.com",
+  "ellie.mendoza@brewstermadrid.com",
 ].map(email => email.toLowerCase()));
 
 const state = {
@@ -171,8 +174,17 @@ const state = {
     gameOver: false,
   },
 
-  nextTriviaTarget: Date.now() + 10 * 60 * 1000,
+  triviaCooldownUntil: null,
   countdownTimer: null,
+
+  adminMessages: [],
+  adminMessagesLoading: false,
+  adminMessagesLoaded: false,
+  adminMessagesError: "",
+  pendingTeachers: [],
+  pendingTeachersLoading: false,
+  pendingTeachersLoaded: false,
+  pendingTeachersError: "",
 
   survey1: { rating: 0, submitted: false },
   survey2: { selected: null, submitted: false },
@@ -224,8 +236,10 @@ function goBack() {
 function formatCountdown(ms) {
   if (ms <= 0) return "00:00";
   const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
+  if (h > 0) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
@@ -237,12 +251,16 @@ function isAllowlistedAdmin(email) {
   return ADMIN_EMAIL_ALLOWLIST.has(normalizeEmail(email));
 }
 
+function hasSeniorAdminAccess(user = state.user) {
+  return isAllowlistedAdmin(user?.email);
+}
+
 function isApprovedTeacher(user) {
   return user?.role === "teacher" && user?.status === "approved";
 }
 
 function hasAdminAccess(user = state.user) {
-  return isAllowlistedAdmin(user?.email) || isApprovedTeacher(user) || state.isAdmin;
+  return hasSeniorAdminAccess(user) || isApprovedTeacher(user) || state.isAdmin;
 }
 
 function syncAdminFromUser(user) {
@@ -251,6 +269,42 @@ function syncAdminFromUser(user) {
 
 function canViewSurveyData(user = state.user) {
   return hasAdminAccess(user);
+}
+
+function getTriviaCooldownRemaining() {
+  if (!state.triviaCooldownUntil) return 0;
+  const remaining = state.triviaCooldownUntil - Date.now();
+  if (remaining <= 0) {
+    state.triviaCooldownUntil = null;
+    try { localStorage.removeItem(TRIVIA_COOLDOWN_STORAGE_KEY); } catch (e) {}
+    return 0;
+  }
+  return remaining;
+}
+
+function isTriviaLocked() {
+  return getTriviaCooldownRemaining() > 0;
+}
+
+function startTriviaCooldown() {
+  state.triviaCooldownUntil = Date.now() + TRIVIA_COOLDOWN_MS;
+  try {
+    localStorage.setItem(TRIVIA_COOLDOWN_STORAGE_KEY, String(state.triviaCooldownUntil));
+  } catch (e) {}
+}
+
+function loadTriviaCooldownFromStorage() {
+  try {
+    const raw = localStorage.getItem(TRIVIA_COOLDOWN_STORAGE_KEY);
+    if (!raw) return;
+    const until = Number(raw);
+    if (!Number.isFinite(until)) {
+      localStorage.removeItem(TRIVIA_COOLDOWN_STORAGE_KEY);
+      return;
+    }
+    state.triviaCooldownUntil = until;
+    getTriviaCooldownRemaining();
+  } catch (e) {}
 }
 
 function escapeHTML(value) {
@@ -523,6 +577,9 @@ function screenSplash() {
 /* --- HOME DASHBOARD --- */
 function screenHome() {
   const adminAccess = hasAdminAccess();
+  const seniorAdminAccess = hasSeniorAdminAccess();
+  const triviaRemaining = getTriviaCooldownRemaining();
+  const triviaLocked = triviaRemaining > 0;
   const maxPts = Math.max(...HOUSES.map(h => h.pts));
   const houseRows = HOUSES.map(h => `
     <div class="house-mini-row">
@@ -543,6 +600,22 @@ function screenHome() {
       <div class="admin-badge">${adminAccess ? "STAFF" : "SECURE"}</div>
     </div>`;
 
+  const seniorAdminCards = seniorAdminAccess ? `
+      <div class="small-card dash-third" onclick="navigate('admin-messages')">
+        <div class="small-card-icon navy-bg">📥</div>
+        <div class="small-card-title">Review Messages</div>
+        <div class="small-card-sub">View all anonymous Ms. Ellie inbox messages</div>
+        <div class="small-card-badge">ADMIN</div>
+      </div>
+
+      <div class="small-card dash-third" onclick="navigate('admin-approvals')">
+        <div class="small-card-icon navy-bg">✅</div>
+        <div class="small-card-title">Approve Teachers</div>
+        <div class="small-card-sub">Approve pending teacher access requests</div>
+        <div class="small-card-badge">ADMIN</div>
+      </div>
+  ` : "";
+
   return `
   <div class="app-screen slide-in">
     ${renderTopBar()}
@@ -558,9 +631,9 @@ function screenHome() {
         <div class="trivia-countdown-row">
           <div>
             <div style="font-size:11px;opacity:0.65;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px;">Next Game In</div>
-            <div class="trivia-countdown" id="hero-countdown">${formatCountdown(state.nextTriviaTarget - Date.now())}</div>
+            <div class="trivia-countdown" id="hero-countdown">${triviaLocked ? formatCountdown(triviaRemaining) : "READY!"}</div>
           </div>
-          <button class="trivia-play-btn" onclick="event.stopPropagation();navigate('trivia')">PLAY NOW</button>
+          <button class="trivia-play-btn ${triviaLocked ? "disabled" : ""}" id="trivia-play-btn" ${triviaLocked ? "disabled" : ""} onclick="event.stopPropagation();navigate('trivia')">${triviaLocked ? "LOCKED" : "PLAY NOW"}</button>
         </div>
       </div>
 
@@ -601,6 +674,7 @@ function screenHome() {
 
       <!-- Admin Panel -->
       ${adminCard}
+      ${seniorAdminCards}
 
     </div>
   </div>`;
@@ -608,7 +682,15 @@ function screenHome() {
 
 /* --- TRIVIA GAME --- */
 function screenTrivia() {
-  if (state.trivia.gameOver) return screenTriviaEnd();
+  const locked = isTriviaLocked();
+  if (state.trivia.gameOver) {
+    if (locked) return screenTriviaEnd();
+    state.trivia = {
+      current: 0, score: 0, timeLeft: TRIVIA_SECONDS,
+      timer: null, answered: false, selectedIdx: null, gameOver: false,
+    };
+  }
+  if (locked) return screenTriviaLocked();
 
   const q = TRIVIA_QUESTIONS[state.trivia.current];
   const total = TRIVIA_QUESTIONS.length;
@@ -679,6 +761,7 @@ function screenTriviaEnd() {
   const total = TRIVIA_QUESTIONS.length;
   const { score } = state.trivia;
   const grade = getTriviaGrade(score, total);
+  const remaining = getTriviaCooldownRemaining();
   return `
   <div class="app-screen slide-in">
     ${renderTopBar("Trivia Results", true)}
@@ -690,7 +773,22 @@ function screenTriviaEnd() {
         <div class="score-big">${score}<span style="font-size:20px;opacity:0.5">/${total}</span></div>
         <div class="score-label">Correct</div>
       </div>
-      <button class="trivia-end-btn" onclick="resetTrivia()">🔄 Play Again</button>
+      <div class="trivia-cooldown-note">Next trivia unlocks in <strong>${formatCountdown(remaining)}</strong></div>
+      <button class="trivia-end-btn outline" onclick="finishTriviaSession()">Back to Home</button>
+    </div>
+  </div>`;
+}
+
+function screenTriviaLocked() {
+  const remaining = getTriviaCooldownRemaining();
+  return `
+  <div class="app-screen slide-in">
+    ${renderTopBar("School Spirit Trivia", true)}
+    <div class="trivia-end">
+      <div class="trivia-end-mascot">⏳</div>
+      <div class="trivia-end-title">Trivia Locked</div>
+      <div class="trivia-end-sub">You must wait for the 24-hour timer to reset before playing again.</div>
+      <div class="trivia-cooldown-note">Time remaining: <strong>${formatCountdown(remaining)}</strong></div>
       <button class="trivia-end-btn outline" onclick="goBack()">Back to Home</button>
     </div>
   </div>`;
@@ -1095,6 +1193,84 @@ function screenMessage() {
       </button>
     </div>
 
+  </div>`;
+}
+
+function renderAdminOnlyScreen(title) {
+  return `
+  <div class="app-screen slide-in">
+    ${renderTopBar(title, true)}
+    <div class="page" style="text-align:center;padding-top:80px;">
+      <div style="font-size:64px">🚫</div>
+      <div style="font-size:22px;font-weight:900;color:var(--text);margin:16px 0">Access Restricted</div>
+      <div style="color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6">Only senior administrators can access this panel.</div>
+    </div>
+  </div>`;
+}
+
+function screenAdminMessages() {
+  if (!hasSeniorAdminAccess()) return renderAdminOnlyScreen("Review Messages");
+  const body = state.adminMessagesLoading
+    ? `<div class="admin-data-empty">Loading messages…</div>`
+    : state.adminMessagesError
+      ? `<div class="admin-data-empty">${escapeHTML(state.adminMessagesError)}</div>`
+      : state.adminMessages.length === 0
+        ? `<div class="admin-data-empty">No messages yet.</div>`
+        : state.adminMessages.map((msg) => `
+          <div class="admin-data-item">
+            <div class="admin-data-item-top">
+              <span class="admin-data-chip">${escapeHTML(msg.category || "Uncategorized")}</span>
+              <span class="admin-data-time">${escapeHTML(formatSurveyTimestamp(msg.created_at))}</span>
+            </div>
+            <div class="admin-data-content">${escapeHTML(msg.content || "")}</div>
+          </div>
+        `).join("");
+
+  return `
+  <div class="app-screen slide-in">
+    ${renderTopBar("Review Messages", true)}
+    <div class="admin-data-screen">
+      <div class="admin-data-header">
+        <div class="admin-data-title">Ms. Ellie Inbox</div>
+        <button class="admin-data-refresh" onclick="loadAdminMessages(true)">Refresh</button>
+      </div>
+      ${body}
+    </div>
+  </div>`;
+}
+
+function screenAdminApprovals() {
+  if (!hasSeniorAdminAccess()) return renderAdminOnlyScreen("Approve Teachers");
+  const body = state.pendingTeachersLoading
+    ? `<div class="admin-data-empty">Loading pending teachers…</div>`
+    : state.pendingTeachersError
+      ? `<div class="admin-data-empty">${escapeHTML(state.pendingTeachersError)}</div>`
+      : state.pendingTeachers.length === 0
+        ? `<div class="admin-data-empty">No pending teacher approvals.</div>`
+        : state.pendingTeachers.map((teacher) => `
+          <div class="admin-data-item">
+            <div class="admin-data-item-top">
+              <span class="admin-data-chip">Pending Teacher</span>
+              <span class="admin-data-time">${escapeHTML(formatSurveyTimestamp(teacher.created_at))}</span>
+            </div>
+            <div class="admin-data-content"><strong>${escapeHTML(teacher.name || "Unknown")}</strong></div>
+            <div class="admin-data-content">${escapeHTML(teacher.email || "")}</div>
+            <div class="admin-data-actions">
+              <button class="admin-data-approve" onclick="approveTeacher('${escapeHTML(teacher.id)}')">Approve</button>
+            </div>
+          </div>
+        `).join("");
+
+  return `
+  <div class="app-screen slide-in">
+    ${renderTopBar("Approve Teachers", true)}
+    <div class="admin-data-screen">
+      <div class="admin-data-header">
+        <div class="admin-data-title">Teacher Approval Queue</div>
+        <button class="admin-data-refresh" onclick="loadPendingTeachers(true)">Refresh</button>
+      </div>
+      ${body}
+    </div>
   </div>`;
 }
 
@@ -1655,6 +1831,7 @@ async function handleApprovalFromURL() {
   const params = new URLSearchParams(window.location.search);
   const token  = params.get("approve");
   if (!token) return false;
+  if (!hasSeniorAdminAccess()) return false;
 
   // Update the user's status in Supabase
   if (sb) {
@@ -1682,6 +1859,14 @@ function logout() {
   state.surveyResponsesError = "";
   state.surveyResultsModal = { open: false, surveyId: null };
   state.surveyResultsFilter = { from: "", to: "" };
+  state.adminMessages = [];
+  state.adminMessagesLoading = false;
+  state.adminMessagesLoaded = false;
+  state.adminMessagesError = "";
+  state.pendingTeachers = [];
+  state.pendingTeachersLoading = false;
+  state.pendingTeachersLoaded = false;
+  state.pendingTeachersError = "";
   state.screen  = "login";
   state.loginStep = "role";
   renderApp();
@@ -1712,6 +1897,8 @@ function getScreenHTML(anim = "slide-in") {
     case "house":            return screenHouse();
     case "surveys":          return screenSurveys();
     case "message":          return screenMessage();
+    case "admin-messages":   return screenAdminMessages();
+    case "admin-approvals":  return screenAdminApprovals();
     case "report":           return screenReport();
     case "emergency-panel":  return screenEmergencyPanel();
     case "profile":          return screenProfile();
@@ -1773,6 +1960,14 @@ function bindEvents() {
   } else {
     stopSurveyRealtime();
   }
+
+  if (state.screen === "admin-messages" && hasSeniorAdminAccess() && !state.adminMessagesLoaded && !state.adminMessagesLoading) {
+    loadAdminMessages();
+  }
+
+  if (state.screen === "admin-approvals" && hasSeniorAdminAccess() && !state.pendingTeachersLoaded && !state.pendingTeachersLoading) {
+    loadPendingTeachers();
+  }
 }
 
 /* ===== TRIVIA GAME LOGIC ===== */
@@ -1787,6 +1982,8 @@ function startTriviaTimer() {
       state.trivia.timer = null;
       state.trivia.answered = true;
       state.trivia.selectedIdx = -1;
+      state.trivia.gameOver = true;
+      startTriviaCooldown();
       renderApp();
     }
   }, 1000);
@@ -1818,6 +2015,7 @@ function nextTriviaQ() {
   const next = state.trivia.current + 1;
   if (next >= TRIVIA_QUESTIONS.length) {
     state.trivia.gameOver = true;
+    startTriviaCooldown();
     renderApp();
     return;
   }
@@ -1829,11 +2027,23 @@ function nextTriviaQ() {
 }
 
 function resetTrivia() {
+  if (isTriviaLocked()) {
+    navigate("trivia");
+    return;
+  }
   state.trivia = {
     current: 0, score: 0, timeLeft: TRIVIA_SECONDS,
     timer: null, answered: false, selectedIdx: null, gameOver: false
   };
   navigate("trivia");
+}
+
+function finishTriviaSession() {
+  state.trivia = {
+    current: 0, score: 0, timeLeft: TRIVIA_SECONDS,
+    timer: null, answered: false, selectedIdx: null, gameOver: false
+  };
+  navigate("home");
 }
 
 /* ===== COUNTDOWN TIMER ===== */
@@ -1842,13 +2052,15 @@ function startCountdownTimer() {
   if (state.countdownTimer) clearInterval(state.countdownTimer);
   state.countdownTimer = setInterval(() => {
     const el = document.getElementById("hero-countdown");
+    const btn = document.getElementById("trivia-play-btn");
     if (!el) { clearInterval(state.countdownTimer); return; }
-    const remaining = state.nextTriviaTarget - Date.now();
-    if (remaining <= 0) {
-      el.textContent = "NOW!";
-      state.nextTriviaTarget = Date.now() + 15 * 60 * 1000;
-    } else {
-      el.textContent = formatCountdown(remaining);
+    const remaining = getTriviaCooldownRemaining();
+    const locked = remaining > 0;
+    el.textContent = locked ? formatCountdown(remaining) : "READY!";
+    if (btn) {
+      btn.disabled = locked;
+      btn.classList.toggle("disabled", locked);
+      btn.textContent = locked ? "LOCKED" : "PLAY NOW";
     }
   }, 1000);
 }
@@ -1982,6 +2194,84 @@ async function sendAnonMessage() {
   }
   state.messageSent = true;
   renderApp();
+}
+
+async function loadAdminMessages(force = false) {
+  if (!hasSeniorAdminAccess()) return;
+  if (state.adminMessagesLoading) return;
+  if (!force && state.adminMessagesLoaded) return;
+  if (!sb) {
+    state.adminMessagesError = "Message inbox is unavailable offline.";
+    state.adminMessagesLoaded = true;
+    renderApp();
+    return;
+  }
+  state.adminMessagesLoading = true;
+  state.adminMessagesError = "";
+  renderApp();
+  const { data, error } = await sb
+    .from("messages")
+    .select("id,category,content,created_at")
+    .order("created_at", { ascending: false })
+    .limit(300);
+  state.adminMessagesLoading = false;
+  if (error) {
+    state.adminMessagesError = error.message;
+    renderApp();
+    return;
+  }
+  state.adminMessages = data || [];
+  state.adminMessagesLoaded = true;
+  renderApp();
+}
+
+async function loadPendingTeachers(force = false) {
+  if (!hasSeniorAdminAccess()) return;
+  if (state.pendingTeachersLoading) return;
+  if (!force && state.pendingTeachersLoaded) return;
+  if (!sb) {
+    state.pendingTeachersError = "Teacher approvals are unavailable offline.";
+    state.pendingTeachersLoaded = true;
+    renderApp();
+    return;
+  }
+  state.pendingTeachersLoading = true;
+  state.pendingTeachersError = "";
+  renderApp();
+  const { data, error } = await sb
+    .from("users")
+    .select("id,name,email,status,created_at")
+    .eq("role", "teacher")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(200);
+  state.pendingTeachersLoading = false;
+  if (error) {
+    state.pendingTeachersError = error.message;
+    renderApp();
+    return;
+  }
+  state.pendingTeachers = data || [];
+  state.pendingTeachersLoaded = true;
+  renderApp();
+}
+
+async function approveTeacher(userId) {
+  if (!hasSeniorAdminAccess()) return;
+  if (!sb) {
+    alert("Approval is unavailable offline.");
+    return;
+  }
+  const { error } = await sb.from("users")
+    .update({ status: "approved", approved_at: new Date().toISOString() })
+    .eq("id", userId)
+    .eq("role", "teacher")
+    .eq("status", "pending");
+  if (error) {
+    alert(`Unable to approve teacher: ${error.message}`);
+    return;
+  }
+  await loadPendingTeachers(true);
 }
 
 /* ===== REPORT PROBLEM ===== */
@@ -2145,6 +2435,9 @@ async function initApp() {
     console.warn("Supabase init failed, running in offline mode:", e);
   }
 
+  // Restore existing session from localStorage
+  const hasSession = loadUserFromStorage();
+
   // Check if this is an admin approval link (?approve=TOKEN)
   const wasApproval = await handleApprovalFromURL();
   if (wasApproval) {
@@ -2153,8 +2446,7 @@ async function initApp() {
     return;
   }
 
-  // Restore existing session from localStorage
-  const hasSession = loadUserFromStorage();
+  loadTriviaCooldownFromStorage();
   if (hasSession) {
     if (state.user.status === "pending") {
       state.screen = "pending";
