@@ -220,6 +220,9 @@ const state = {
 function navigate(screen, back = false) {
   if (state.screen !== "splash") state.history.push(state.screen);
   state.screen = screen;
+  if (screen !== "message") {
+    state.messageError = "";
+  }
   if (screen !== "surveys") {
     state.surveyResultsModal = { open: false, surveyId: null };
   }
@@ -236,6 +239,9 @@ function goBack() {
   if (!prev || prev === state.screen) prev = "home";
   stopTriviaTimer();
   state.screen = prev;
+  if (prev !== "message") {
+    state.messageError = "";
+  }
   if (prev !== "surveys") {
     state.surveyResultsModal = { open: false, surveyId: null };
   }
