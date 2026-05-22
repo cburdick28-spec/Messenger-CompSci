@@ -210,6 +210,7 @@ const state = {
   pressingEmergency: false,
   pressTimer: null,
   pressInterval: null,
+  lastRenderedScreen: null,
 };
 
 /* ===== ROUTER ===== */
@@ -1987,16 +1988,17 @@ function screenProfilePlaceholder() {
 
 const NO_SIDEBAR_SCREENS = new Set(["splash","login","pending","approval-success"]);
 
-function renderApp(anim = "") {
+function renderApp(anim) {
+  const effectiveAnim = anim ?? (state.lastRenderedScreen !== state.screen ? "slide-in" : "");
   const root = document.getElementById("root");
   if (NO_SIDEBAR_SCREENS.has(state.screen)) {
-    root.innerHTML = getScreenHTML(anim) + renderEmergencyOverlay();
+    root.innerHTML = getScreenHTML(effectiveAnim) + renderEmergencyOverlay();
   } else {
     root.innerHTML = `
       <div class="app-layout">
         ${renderSidebar()}
         <div class="main-area">
-          ${getScreenHTML(anim)}
+          ${getScreenHTML(effectiveAnim)}
         </div>
       </div>
       ${renderEmergencyOverlay()}`;
@@ -2004,8 +2006,9 @@ function renderApp(anim = "") {
   const screenEl = root.querySelector(".app-screen");
   if (screenEl) {
     screenEl.classList.remove("slide-in", "slide-back", "fade-in");
-    if (anim) screenEl.classList.add(anim);
+    if (effectiveAnim) screenEl.classList.add(effectiveAnim);
   }
+  state.lastRenderedScreen = state.screen;
   bindEvents();
 }
 
