@@ -1987,7 +1987,7 @@ function screenProfilePlaceholder() {
 
 const NO_SIDEBAR_SCREENS = new Set(["splash","login","pending","approval-success"]);
 
-function renderApp(anim = "slide-in") {
+function renderApp(anim = "") {
   const root = document.getElementById("root");
   if (NO_SIDEBAR_SCREENS.has(state.screen)) {
     root.innerHTML = getScreenHTML(anim) + renderEmergencyOverlay();
@@ -2000,6 +2000,11 @@ function renderApp(anim = "slide-in") {
         </div>
       </div>
       ${renderEmergencyOverlay()}`;
+  }
+  const screenEl = root.querySelector(".app-screen");
+  if (screenEl) {
+    screenEl.classList.remove("slide-in", "slide-back", "fade-in");
+    if (anim) screenEl.classList.add(anim);
   }
   bindEvents();
 }
