@@ -382,7 +382,7 @@ function escapeHTML(value) {
   }[ch]));
 }
 
-const MAX_ADMIN_MESSAGES = 300;
+const ADMIN_MESSAGES_FETCH_LIMIT = 300;
 
 function isSchemaMismatchError(error) {
   if (!error) return false;
@@ -399,7 +399,7 @@ function normalizeAdminMessageRow(row, index) {
     String(index),
   ].join("|");
   return {
-    id: row?.id || fallbackIdSource,
+    id: row?.id ?? fallbackIdSource,
     category: row?.category ?? null,
     content: row?.content ?? row?.message ?? "",
     created_at: row?.created_at ?? null,
@@ -417,7 +417,7 @@ async function fetchAdminMessagesWithFallback() {
   let lastError = null;
 
   for (const attempt of attempts) {
-    const query = sb.from("messages").select(attempt.select).limit(MAX_ADMIN_MESSAGES);
+    const query = sb.from("messages").select(attempt.select).limit(ADMIN_MESSAGES_FETCH_LIMIT);
     const { data, error } = attempt.withOrder
       ? await query.order("created_at", { ascending: false })
       : await query;
