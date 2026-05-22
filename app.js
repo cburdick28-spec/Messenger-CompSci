@@ -382,6 +382,8 @@ function escapeHTML(value) {
   }[ch]));
 }
 
+const MAX_ADMIN_MESSAGES = 300;
+
 function isSchemaMismatchError(error) {
   if (!error) return false;
   if (error.code === "42703" || error.code === "42P01") return true;
@@ -415,7 +417,7 @@ async function fetchAdminMessagesWithFallback() {
   let lastError = null;
 
   for (const attempt of attempts) {
-    const query = sb.from("messages").select(attempt.select).limit(300);
+    const query = sb.from("messages").select(attempt.select).limit(MAX_ADMIN_MESSAGES);
     const { data, error } = attempt.withOrder
       ? await query.order("created_at", { ascending: false })
       : await query;
