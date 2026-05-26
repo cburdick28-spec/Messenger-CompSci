@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at timestamptz DEFAULT now()
 );
 
+-- Ensure legacy messages tables gain the category column used by the app.
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS category text;
+
 CREATE TABLE IF NOT EXISTS survey_responses (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   survey_id text NOT NULL,
