@@ -13,9 +13,26 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at timestamptz DEFAULT now()
 );
 
--- Ensure legacy messages tables gain the category column used by the app.
+-- Ensure legacy messages tables gain the content + category columns used by the app.
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS content text;
+
 ALTER TABLE messages
   ADD COLUMN IF NOT EXISTS category text;
+
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'messages'
+       AND column_name = 'message'
+  ) THEN
+    UPDATE messages
+       SET content = COALESCE(content, message)
+     WHERE content IS NULL;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS survey_responses (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
